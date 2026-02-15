@@ -129,3 +129,213 @@ export const DEFAULT_SLEEP: Record<BabyName, SleepProfile> = {
     ],
   },
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Repères éducatifs bébé 6 mois (rotatifs par heure)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface BabyFact {
+  id: string;
+  title: string;
+  message: string;
+  category: 'feeding' | 'sleep' | 'development' | 'twins';
+  hours: number[];
+}
+
+export const BABY_FACTS_6M: BabyFact[] = [
+  // ── Alimentation ──────────────────────────────────────────────────
+  {
+    id: 'fact-volume-typique',
+    title: 'Volume typique à 6 mois',
+    message: 'Un biberon fait en moyenne 120-180 ml à 6 mois. Les volumes varient selon l\'heure, la fatigue et l\'activité — c\'est normal.',
+    category: 'feeding',
+    hours: [6, 7, 8, 10, 11, 14, 15],
+  },
+  {
+    id: 'fact-repas-par-jour',
+    title: 'Nombre de repas par jour',
+    message: '4 à 6 repas par jour est la norme à 6 mois. Au-delà, c\'est souvent du cluster feeding — un mécanisme naturel, pas un problème.',
+    category: 'feeding',
+    hours: [9, 12, 15, 18],
+  },
+  {
+    id: 'fact-apport-journalier',
+    title: 'Apport journalier',
+    message: 'Un bébé de 6 mois consomme 700-900 ml par jour. Si la diversification a commencé, le lait reste l\'apport principal jusqu\'à 12 mois.',
+    category: 'feeding',
+    hours: [8, 11, 14, 17, 20],
+  },
+  {
+    id: 'fact-intervalle',
+    title: 'Intervalle entre repas',
+    message: 'L\'intervalle typique à 6 mois est de 3h30-4h30. Chaque bébé a son rythme propre — les écarts sont normaux.',
+    category: 'feeding',
+    hours: [7, 10, 13, 16],
+  },
+  {
+    id: 'fact-diversification',
+    title: 'Diversification alimentaire',
+    message: '6 mois est le moment recommandé pour les solides. Commencez par des purées lisses en petites quantités. Le lait reste l\'aliment principal.',
+    category: 'feeding',
+    hours: [9, 10, 11, 12],
+  },
+  {
+    id: 'fact-variation-appetit',
+    title: 'Variations d\'appétit',
+    message: 'L\'appétit varie selon la fatigue, les poussées dentaires et l\'activité. Un repas plus petit suivi d\'un plus gros est un mécanisme de régulation naturel.',
+    category: 'feeding',
+    hours: [8, 13, 16, 19],
+  },
+  {
+    id: 'fact-appetit-soir',
+    title: 'Appétit du soir',
+    message: 'Beaucoup de bébés de 6 mois mangent davantage le soir — c\'est un "plein" naturel avant la nuit. Prévoyez un biberon un peu plus grand.',
+    category: 'feeding',
+    hours: [17, 18, 19, 20],
+  },
+  {
+    id: 'fact-repas-nuit',
+    title: 'Repas de nuit',
+    message: '1 à 2 biberons de nuit restent courants à 6 mois. Ils diminuent naturellement avec l\'âge — pas besoin de forcer le sevrage.',
+    category: 'feeding',
+    hours: [20, 21, 22, 23, 0, 1, 2, 3],
+  },
+  // ── Sommeil ──────────────────────────────────────────────────────
+  {
+    id: 'fact-sommeil-total',
+    title: 'Sommeil à 6 mois',
+    message: 'Un bébé de 6 mois dort 12-15h par jour : 10-12h la nuit (avec possibles réveils) + 2-3 siestes en journée.',
+    category: 'sleep',
+    hours: [7, 12, 19, 21],
+  },
+  {
+    id: 'fact-fenetre-eveil',
+    title: 'Fenêtres d\'éveil',
+    message: 'À 6 mois, un bébé peut rester éveillé 1h30-2h30 entre deux siestes. Au-delà de 3h, il risque d\'être surstimulé.',
+    category: 'sleep',
+    hours: [8, 9, 11, 13, 15],
+  },
+  {
+    id: 'fact-transition-siestes',
+    title: 'Transition des siestes',
+    message: 'Entre 6 et 9 mois, beaucoup de bébés passent de 3 siestes à 2. Des jours à 3 et d\'autres à 2 sont normaux pendant la transition.',
+    category: 'sleep',
+    hours: [9, 10, 14, 15, 16],
+  },
+  {
+    id: 'fact-regression-sommeil',
+    title: 'Régression du sommeil',
+    message: 'Une régression du sommeil est courante entre 4 et 6 mois — réveils plus fréquents, siestes courtes. Ça dure 2-4 semaines, c\'est lié au développement cérébral.',
+    category: 'sleep',
+    hours: [6, 22, 23, 0, 1, 2],
+  },
+  {
+    id: 'fact-routine-coucher',
+    title: 'Routine du coucher',
+    message: 'Une routine régulière (bain, biberon, berceuse) aide le bébé à anticiper le sommeil. 20-30 min de rituel suffisent.',
+    category: 'sleep',
+    hours: [18, 19, 20, 21],
+  },
+  {
+    id: 'fact-sieste-matin',
+    title: 'Sieste du matin',
+    message: 'La sieste du matin (souvent vers 9h-10h) est généralement la plus réparatrice. Elle est liée au sommeil de nuit.',
+    category: 'sleep',
+    hours: [7, 8, 9, 10],
+  },
+  {
+    id: 'fact-premier-stretch',
+    title: 'Premier stretch de nuit',
+    message: 'Le premier sommeil de nuit est souvent le plus long (4-6h à 6 mois). Un bon repas du soir peut aider à l\'allonger.',
+    category: 'sleep',
+    hours: [20, 21, 22, 23],
+  },
+  // ── Développement ─────────────────────────────────────────────────
+  {
+    id: 'fact-motricite',
+    title: 'Motricité à 6 mois',
+    message: 'À 6 mois, la plupart des bébés tiennent assis (avec appui), attrapent des objets et commencent à se retourner. L\'activité accrue augmente les besoins caloriques.',
+    category: 'development',
+    hours: [8, 10, 14, 16],
+  },
+  {
+    id: 'fact-dents',
+    title: 'Poussées dentaires',
+    message: 'Les premières dents apparaissent souvent entre 4 et 7 mois. Signes : bave, gencives gonflées, irritabilité. L\'appétit peut baisser de 10-30%.',
+    category: 'development',
+    hours: [7, 11, 15, 19],
+  },
+  {
+    id: 'fact-curiosite',
+    title: 'Curiosité et distraction',
+    message: 'À 6 mois, les bébés sont très curieux. Les repas peuvent être plus courts ou agités — ce n\'est pas un refus, c\'est de l\'exploration.',
+    category: 'development',
+    hours: [9, 12, 15, 17],
+  },
+  {
+    id: 'fact-pic-croissance',
+    title: 'Pics de croissance',
+    message: 'Les pics de croissance à 6 mois durent 2-4 jours : appétit +20-40%, repas plus fréquents, sommeil parfois perturbé. C\'est temporaire.',
+    category: 'development',
+    hours: [6, 10, 14, 18, 22],
+  },
+  {
+    id: 'fact-poids',
+    title: 'Prise de poids',
+    message: 'À 6 mois, un bébé a généralement doublé son poids de naissance. La prise de poids ralentit ensuite (400-500g/mois). C\'est normal.',
+    category: 'development',
+    hours: [8, 13, 17],
+  },
+  {
+    id: 'fact-babillage',
+    title: 'Babillage',
+    message: 'Vers 6 mois, le babillage se diversifie (ba-ba, da-da). Parler pendant les repas stimule le langage sans gêner l\'alimentation.',
+    category: 'development',
+    hours: [7, 11, 15, 19],
+  },
+  {
+    id: 'fact-objet-permanent',
+    title: 'Permanence de l\'objet',
+    message: 'Vers 6 mois, bébé comprend qu\'un objet caché existe encore. C\'est aussi pourquoi l\'anxiété de séparation peut apparaître au coucher.',
+    category: 'development',
+    hours: [20, 21, 9, 13],
+  },
+  // ── Jumeaux ───────────────────────────────────────────────────────
+  {
+    id: 'fact-jumeaux-individualite',
+    title: 'Chaque jumeau est unique',
+    message: 'Même des jumeaux identiques développent des préférences distinctes. Des rythmes différents sont normaux — comparez chaque bébé à son propre historique.',
+    category: 'twins',
+    hours: [7, 10, 13, 16, 19],
+  },
+  {
+    id: 'fact-jumeaux-sync',
+    title: 'Synchronisation des jumeaux',
+    message: 'Nourrir les deux ensemble quand c\'est possible facilite la logistique. Mais forcer un rythme identique n\'est pas nécessaire — ils se recalent souvent seuls.',
+    category: 'twins',
+    hours: [8, 11, 14, 17, 20],
+  },
+];
+
+export function getHourlyFacts(hour: number): BabyFact[] {
+  // Filter facts relevant to this hour
+  const relevant = BABY_FACTS_6M.filter((f) => f.hours.includes(hour));
+
+  // If not enough relevant facts, include all
+  const pool = relevant.length >= 2 ? relevant : BABY_FACTS_6M;
+
+  // Use hour to deterministically pick 2 facts, rotating through the pool
+  const idx1 = hour % pool.length;
+  let idx2 = (hour * 7 + 3) % pool.length;
+  if (idx2 === idx1) idx2 = (idx2 + 1) % pool.length;
+
+  // Ensure different categories when possible
+  const fact1 = pool[idx1];
+  let fact2 = pool[idx2];
+  if (fact1.category === fact2.category && pool.length > 2) {
+    const other = pool.find((f, i) => i !== idx1 && f.category !== fact1.category);
+    if (other) fact2 = other;
+  }
+
+  return [fact1, fact2];
+}

@@ -24,39 +24,16 @@ const CATEGORY_LABELS: Record<string, string> = {
 export function Recommendations({ recommendations }: RecommendationsProps) {
   if (recommendations.length === 0) return null;
 
-  // Separate pattern-based (dynamic) from age-based (educational)
-  const patternRecs = recommendations.filter((r) => r.category === 'pattern');
-  const ageRecs = recommendations.filter((r) => r.category !== 'pattern');
-
   return (
-    <div className="space-y-4">
-      {/* Pattern-based recommendations */}
-      {patternRecs.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">
-          <h3 className="text-xs text-gray-400 uppercase tracking-wide">
-            Recommandations
-          </h3>
-          <div className="space-y-2">
-            {patternRecs.map((rec) => (
-              <RecItem key={rec.id} rec={rec} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Age-based insights */}
-      {ageRecs.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">
-          <h3 className="text-xs text-gray-400 uppercase tracking-wide">
-            Reperes — bebes de 6 mois
-          </h3>
-          <div className="space-y-3">
-            {ageRecs.map((rec) => (
-              <RecItem key={rec.id} rec={rec} />
-            ))}
-          </div>
-        </div>
-      )}
+    <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">
+      <h3 className="text-xs text-gray-400 uppercase tracking-wide">
+        Recommandations
+      </h3>
+      <div className="space-y-2">
+        {recommendations.map((rec) => (
+          <RecItem key={rec.id} rec={rec} />
+        ))}
+      </div>
     </div>
   );
 }

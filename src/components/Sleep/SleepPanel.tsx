@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Moon, Clock, ChevronDown, ChevronUp, Lightbulb } from 'lucide-react';
+import { Moon, Clock, ChevronDown, ChevronUp, Lightbulb, BookOpen } from 'lucide-react';
 import type { BabyName, FeedSleepAnalysis, InsightConfidence } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
-import { PROFILES } from '../../data/knowledge';
+import { PROFILES, getHourlyFacts } from '../../data/knowledge';
 
 interface SleepPanelProps {
   analyses: Record<BabyName, SleepAnalysis>;
   feedSleepInsights: Record<BabyName, FeedSleepAnalysis | null>;
+  hour: number;
 }
 
 const confidenceColors: Record<InsightConfidence, { dot: string; text: string }> = {
@@ -30,7 +31,21 @@ function formatDuration(min: number): string {
   return `${min} min`;
 }
 
-export function SleepPanel({ analyses, feedSleepInsights }: SleepPanelProps) {
+const FACT_CATEGORY_LABELS: Record<string, string> = {
+  feeding: 'Alimentation',
+  sleep: 'Sommeil',
+  development: 'Développement',
+  twins: 'Jumelles',
+};
+
+const FACT_CATEGORY_COLORS: Record<string, string> = {
+  feeding: 'bg-orange-100 text-orange-600',
+  sleep: 'bg-indigo-100 text-indigo-600',
+  development: 'bg-emerald-100 text-emerald-600',
+  twins: 'bg-pink-100 text-pink-600',
+};
+
+export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProps) {
   const allInsights = [
     ...(feedSleepInsights.colette?.insights ?? []),
     ...(feedSleepInsights.isaure?.insights ?? []),
@@ -38,6 +53,8 @@ export function SleepPanel({ analyses, feedSleepInsights }: SleepPanelProps) {
   const hasInsights = allInsights.length > 0;
 
   const [insightsOpen, setInsightsOpen] = useState(hasInsights);
+  const [factsOpen, setFactsOpen] = useState(false);
+  const facts = getHourlyFacts(hour);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">
@@ -109,7 +126,7 @@ export function SleepPanel({ analyses, feedSleepInsights }: SleepPanelProps) {
         })}
       </div>
 
-      {/* Feed-Sleep Insights section (kept as-is) */}
+      {/* Feed-Sleep Insights section */}
       {hasInsights && (
         <div className="border-t border-gray-100 pt-3 space-y-3">
           <button
@@ -183,6 +200,49 @@ export function SleepPanel({ analyses, feedSleepInsights }: SleepPanelProps) {
           )}
         </div>
       )}
+
+      {/* Repères bébé de 6 mois */}
+      <div className="border-t border-gray-100 pt-3 space-y-3">
+        <button
+          onClick={() => setFactsOpen(!factsOpen)}
+          className="flex items-center justify-between w-full text-left min-h-[44px] py-1"
+        >
+          <div className="flex items-center gap-1.5">
+            <BookOpen className="text-indigo-400" size={14} />
+            <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+              Repères bébé de 6 mois
+            </span>
+          </div>
+          {factsOpen ? (
+            <ChevronUp className="text-gray-400" size={14} />
+          ) : (
+            <ChevronDown className="text-gray-400" size={14} />
+          )}
+        </button>
+
+        {factsOpen && (
+          <div className="space-y-3">
+            {facts.map((fact) => (
+              <div key={fact.id} className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-700">
+                    {fact.title}
+                  </span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${FACT_CATEGORY_COLORS[fact.category]}`}>
+                    {FACT_CATEGORY_LABELS[fact.category]}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  {fact.message}
+                </p>
+              </div>
+            ))}
+            <p className="text-[10px] text-gray-300 italic text-center">
+              Change chaque heure
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

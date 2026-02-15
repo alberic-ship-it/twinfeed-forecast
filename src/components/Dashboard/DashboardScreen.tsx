@@ -102,7 +102,7 @@ export function DashboardScreen() {
         <TwinsSync syncStatus={syncStatus} />
 
         {/* Sleep panel */}
-        <SleepPanel analyses={sleepAnalyses} feedSleepInsights={feedSleepInsights} />
+        <SleepPanel analyses={sleepAnalyses} feedSleepInsights={feedSleepInsights} hour={now.getHours()} />
 
         {/* Recommendations */}
         <Recommendations recommendations={recommendations} />

@@ -367,6 +367,186 @@ function computeClusterThenSleep(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 6. Insights contextuels par créneau horaire
+// ═══════════════════════════════════════════════════════════════════════════
+
+function computeHourlyContextInsights(
+  baby: BabyName,
+  bottles: FeedRecord[],
+  naps: SleepRecord[],
+  nightSleeps: SleepRecord[],
+  hour: number,
+): FeedSleepInsight[] {
+  const name = PROFILES[baby].name;
+  const results: FeedSleepInsight[] = [];
+
+  if (hour >= 6 && hour < 10) {
+    // Matin : impact du biberon du matin sur la sieste du matin
+    const morningBottles = bottles.filter((f) => f.timestamp.getHours() >= 6 && f.timestamp.getHours() < 10);
+    const morningNaps = naps.filter((s) => s.startTime.getHours() >= 8 && s.startTime.getHours() < 12);
+
+    if (morningBottles.length >= 3 && morningNaps.length >= 3) {
+      const medVol = median(morningBottles.map((f) => f.volumeMl));
+      const bigMorning = morningNaps.filter((n) => {
+        const fb = findLastFeedBefore(bottles, n.startTime, 180);
+        return fb && fb.volumeMl > medVol;
+      });
+      const smallMorning = morningNaps.filter((n) => {
+        const fb = findLastFeedBefore(bottles, n.startTime, 180);
+        return fb && fb.volumeMl <= medVol;
+      });
+
+      if (bigMorning.length >= 2 && smallMorning.length >= 2) {
+        const avgBig = Math.round(avg(bigMorning.map((n) => n.durationMin)));
+        const avgSmall = Math.round(avg(smallMorning.map((n) => n.durationMin)));
+        const lastBottle = morningBottles[morningBottles.length - 1];
+
+        results.push({
+          id: `hourly-morning-${baby}`,
+          baby,
+          label: 'Matin & sieste',
+          observation: `Ce matin, ${name} a bu ${lastBottle ? `${lastBottle.volumeMl}ml` : '?'} — après un biberon >${Math.round(medVol)}ml, ses siestes du matin durent ~${avgBig}min vs ~${avgSmall}min sinon.`,
+          dataPoints: bigMorning.length + smallMorning.length,
+          confidence: confidence(bigMorning.length + smallMorning.length),
+          stat: `${avgBig} vs ${avgSmall} min`,
+        });
+      }
+    }
+  } else if (hour >= 10 && hour < 14) {
+    // Mi-journée : délai repas→sieste de midi, comparaison durée
+    const middayNaps = naps.filter((s) => s.startTime.getHours() >= 11 && s.startTime.getHours() < 15);
+    const otherNaps = naps.filter((s) => s.startTime.getHours() < 11 || s.startTime.getHours() >= 15);
+
+    if (middayNaps.length >= 3) {
+      const latencies: number[] = [];
+      for (const nap of middayNaps) {
+        const fb = findLastFeedBefore(bottles, nap.startTime, 180);
+        if (fb) latencies.push(differenceInMinutes(nap.startTime, fb.timestamp));
+      }
+      const avgLatency = latencies.length >= 2 ? Math.round(avg(latencies)) : null;
+      const avgMidday = Math.round(avg(middayNaps.map((n) => n.durationMin)));
+      const avgOther = otherNaps.length >= 2 ? Math.round(avg(otherNaps.map((n) => n.durationMin))) : null;
+
+      let obs = `La sieste de midi de ${name} dure en moyenne ${avgMidday}min`;
+      if (avgOther !== null) obs += ` (vs ${avgOther}min pour les autres siestes)`;
+      if (avgLatency !== null) obs += `. Délai repas→sieste : ~${avgLatency}min`;
+      obs += '.';
+
+      results.push({
+        id: `hourly-midday-${baby}`,
+        baby,
+        label: 'Sieste de midi',
+        observation: obs,
+        dataPoints: middayNaps.length,
+        confidence: confidence(middayNaps.length),
+        stat: `~${avgMidday} min`,
+      });
+    }
+  } else if (hour >= 14 && hour < 18) {
+    // Après-midi : nb de siestes par jour, durée 3e sieste
+    const napsByDay = new Map<string, number>();
+    const thirdNapDurations: number[] = [];
+
+    for (const nap of naps) {
+      const dayKey = startOfDay(nap.startTime).toISOString();
+      const count = (napsByDay.get(dayKey) ?? 0) + 1;
+      napsByDay.set(dayKey, count);
+      if (count === 3) thirdNapDurations.push(nap.durationMin);
+    }
+
+    const dayCounts = [...napsByDay.values()];
+    if (dayCounts.length >= 3) {
+      const avgNaps = Math.round(avg(dayCounts) * 10) / 10;
+      let obs = `${name} fait en moyenne ${avgNaps} siestes par jour`;
+      if (thirdNapDurations.length >= 2) {
+        const avg3rd = Math.round(avg(thirdNapDurations));
+        obs += `. La 3e sieste dure ~${avg3rd}min en moyenne`;
+      }
+      obs += '.';
+
+      results.push({
+        id: `hourly-afternoon-${baby}`,
+        baby,
+        label: 'Siestes de la journée',
+        observation: obs,
+        dataPoints: dayCounts.length,
+        confidence: confidence(dayCounts.length),
+        stat: `~${avgNaps} siestes/jour`,
+      });
+    }
+  } else if (hour >= 18 && hour < 22) {
+    // Soir : corrélation volume soir → 1er stretch de nuit
+    const dayMap = new Map<string, { vol: number; stretch: number }>();
+    for (const ns of nightSleeps) {
+      const dayKey = startOfDay(ns.startTime).toISOString();
+      const dayStart = startOfDay(ns.startTime);
+      const evStart = addHours(dayStart, 17);
+      const evEnd = addHours(dayStart, 22);
+      const vol = bottles
+        .filter((f) => f.timestamp >= evStart && f.timestamp < evEnd)
+        .reduce((s, f) => s + f.volumeMl, 0);
+      if (vol > 0) dayMap.set(dayKey, { vol, stretch: ns.durationMin });
+    }
+
+    const entries = [...dayMap.values()];
+    if (entries.length >= 5) {
+      const medVol = median(entries.map((e) => e.vol));
+      const big = entries.filter((e) => e.vol > medVol);
+      const small = entries.filter((e) => e.vol <= medVol);
+      if (big.length >= 2 && small.length >= 2) {
+        const avgBig = Math.round(avg(big.map((e) => e.stretch)));
+        const avgSmall = Math.round(avg(small.map((e) => e.stretch)));
+        const diff = avgBig - avgSmall;
+
+        results.push({
+          id: `hourly-evening-${baby}`,
+          baby,
+          label: 'Volume du soir & nuit',
+          observation: `Quand ${name} boit >${Math.round(medVol)}ml le soir, son 1er stretch de nuit dure ~${avgBig}min vs ~${avgSmall}min (${diff > 0 ? '+' : ''}${diff}min).`,
+          dataPoints: entries.length,
+          confidence: confidence(entries.length),
+          stat: `${diff > 0 ? '+' : ''}${diff} min`,
+        });
+      }
+    }
+  } else {
+    // Nuit (22-6h) : durée 1er stretch, nb réveils
+    if (nightSleeps.length >= 3) {
+      const avgStretch = Math.round(avg(nightSleeps.map((s) => s.durationMin)));
+      const stretchH = Math.floor(avgStretch / 60);
+      const stretchM = avgStretch % 60;
+
+      // Count night wakings per night
+      const nightsByDay = new Map<string, number>();
+      for (const ns of nightSleeps) {
+        const dayKey = startOfDay(ns.startTime).toISOString();
+        nightsByDay.set(dayKey, (nightsByDay.get(dayKey) ?? 0) + 1);
+      }
+      const wakingCounts = [...nightsByDay.values()];
+      const avgWakings = wakingCounts.length > 0
+        ? Math.round(avg(wakingCounts.map((c) => Math.max(0, c - 1))) * 10) / 10
+        : null;
+
+      let obs = `Le 1er stretch de nuit de ${name} dure en moyenne ${stretchH}h${stretchM > 0 ? stretchM.toString().padStart(2, '0') : ''}`;
+      if (avgWakings !== null) obs += `. En moyenne ${avgWakings} réveil${avgWakings > 1 ? 's' : ''} par nuit`;
+      obs += '.';
+
+      results.push({
+        id: `hourly-night-${baby}`,
+        baby,
+        label: 'Nuit en cours',
+        observation: obs,
+        dataPoints: nightSleeps.length,
+        confidence: confidence(nightSleeps.length),
+        stat: `~${stretchH}h${stretchM > 0 ? stretchM.toString().padStart(2, '0') : ''} de stretch`,
+      });
+    }
+  }
+
+  return results;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Main entry point
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -389,6 +569,13 @@ export function analyzeFeedSleepLinks(
     (s) => s.startTime.getHours() >= 6 && s.startTime.getHours() < 21,
   );
 
+  // Night sleeps (starts >= 20h, duration > 120 min)
+  const nightSleeps = sleeps.filter(
+    (s) => s.startTime.getHours() >= 20 && s.durationMin > 120,
+  );
+
+  const hour = now.getHours();
+
   const analyses = [
     computePreSleepFeedImpact(baby, bottles, naps),
     computePostNapAppetite(baby, bottles, naps),
@@ -397,9 +584,14 @@ export function analyzeFeedSleepLinks(
     computeClusterThenSleep(baby, feeds, sleeps),
   ];
 
+  const hourlyInsights = computeHourlyContextInsights(baby, bottles, naps, nightSleeps, hour);
+
   return {
     baby,
-    insights: analyses.filter((a): a is FeedSleepInsight => a !== null),
+    insights: [
+      ...analyses.filter((a): a is FeedSleepInsight => a !== null),
+      ...hourlyInsights,
+    ],
     computedAt: now,
   };
 }
