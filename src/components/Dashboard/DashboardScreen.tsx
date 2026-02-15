@@ -1,0 +1,120 @@
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { RefreshCw, BarChart3, RotateCcw, Upload } from 'lucide-react';
+import { useStore } from '../../store';
+import { usePredictions } from '../../hooks/usePredictions';
+import { analyzeSleep } from '../../engine/sleep';
+import { generateRecommendations } from '../../data/recommendations';
+import { BabyCard } from '../BabyCard/BabyCard';
+import { Timeline } from '../Timeline/Timeline';
+import { TwinsSync } from '../TwinsSync/TwinsSync';
+import { AlertsList } from '../Alerts/AlertsList';
+import { SleepPanel } from '../Sleep/SleepPanel';
+import { Recommendations } from '../Recommendations/Recommendations';
+import { QuickLog } from '../QuickLog/QuickLog';
+import type { BabyName } from '../../types';
+
+export function DashboardScreen() {
+  const {
+    predictions,
+    syncStatus,
+    alerts,
+    patterns,
+    feeds,
+    sleeps,
+    lastUpdated,
+    refreshPredictions,
+  } = usePredictions();
+
+  const setScreen = useStore((s) => s.setScreen);
+  const dismissAlert = useStore((s) => s.dismissAlert);
+  const reset = useStore((s) => s.reset);
+  const feedSleepInsights = useStore((s) => s.feedSleepInsights);
+
+  const now = new Date();
+
+  // Sleep analyses
+  const sleepAnalyses = {
+    colette: analyzeSleep('colette', sleeps, feeds, now),
+    isaure: analyzeSleep('isaure', sleeps, feeds, now),
+  };
+
+  // Recommendations
+  const recommendations = generateRecommendations(feeds, patterns, predictions, syncStatus);
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-3 sm:px-4 py-3 safe-top">
+        <div className="max-w-lg mx-auto flex items-center justify-between">
+          <h1 className="text-lg sm:text-xl font-semibold text-gray-800">TwinFeed</h1>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setScreen('import')}
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 active:text-gray-800 transition-colors"
+              title="Importer CSV"
+            >
+              <Upload size={20} />
+            </button>
+            <button
+              onClick={refreshPredictions}
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 active:text-gray-800 transition-colors"
+              title="Rafraîchir"
+            >
+              <RefreshCw size={20} />
+            </button>
+            <button
+              onClick={() => setScreen('insights')}
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 active:text-gray-800 transition-colors"
+              title="Insights"
+            >
+              <BarChart3 size={20} />
+            </button>
+            <button
+              onClick={reset}
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 active:text-gray-800 transition-colors"
+              title="Réinitialiser"
+            >
+              <RotateCcw size={20} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4 pb-8">
+        {/* Quick log */}
+        <QuickLog />
+
+        {/* Alerts */}
+        <AlertsList alerts={alerts} onDismiss={dismissAlert} />
+
+        {/* Baby cards */}
+        <div className="grid grid-cols-2 gap-2 sm:gap-3">
+          {(['colette', 'isaure'] as BabyName[]).map((baby) => (
+            <BabyCard key={baby} baby={baby} prediction={predictions[baby]} />
+          ))}
+        </div>
+
+        {/* Timeline */}
+        <Timeline predictions={predictions} />
+
+        {/* Twins sync */}
+        <TwinsSync syncStatus={syncStatus} />
+
+        {/* Sleep panel */}
+        <SleepPanel analyses={sleepAnalyses} feedSleepInsights={feedSleepInsights} />
+
+        {/* Recommendations */}
+        <Recommendations recommendations={recommendations} />
+
+        {/* Footer */}
+        {lastUpdated && (
+          <p className="text-xs text-gray-400 text-center pb-4">
+            Mis à jour à {format(lastUpdated, 'HH:mm', { locale: fr })} —{' '}
+            {feeds.length} repas chargés
+          </p>
+        )}
+      </main>
+    </div>
+  );
+}

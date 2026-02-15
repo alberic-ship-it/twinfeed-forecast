@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/* Safe area for notched devices */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Smooth touch interactions */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
