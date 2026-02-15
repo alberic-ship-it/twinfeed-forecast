@@ -35,6 +35,7 @@ interface Store {
   loadData: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
   addFeeds: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
   logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number) => void;
+  logSleep: (baby: BabyName, durationMin: number) => void;
   refreshPredictions: () => void;
   refreshInsights: () => void;
   dismissAlert: (id: string) => void;
@@ -90,6 +91,24 @@ export const useStore = create<Store>((set, get) => ({
     );
     set({ feeds: allFeeds, dataLoaded: true });
     get().refreshPredictions();
+  },
+
+  logSleep: (baby, durationMin) => {
+    const now = new Date();
+    const sleep: SleepRecord = {
+      id: crypto.randomUUID(),
+      baby,
+      startTime: new Date(now.getTime() - durationMin * 60000),
+      endTime: now,
+      durationMin,
+    };
+    const { sleeps } = get();
+    const allSleeps = [...sleeps, sleep].sort(
+      (a, b) => a.startTime.getTime() - b.startTime.getTime()
+    );
+    set({ sleeps: allSleeps, dataLoaded: true });
+    get().refreshPredictions();
+    get().refreshInsights();
   },
 
   refreshPredictions: () => {

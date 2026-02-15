@@ -12,6 +12,7 @@ import { AlertsList } from '../Alerts/AlertsList';
 import { SleepPanel } from '../Sleep/SleepPanel';
 import { Recommendations } from '../Recommendations/Recommendations';
 import { QuickLog } from '../QuickLog/QuickLog';
+import { SleepLog } from '../QuickLog/SleepLog';
 import type { BabyName } from '../../types';
 
 export function DashboardScreen() {
@@ -84,6 +85,7 @@ export function DashboardScreen() {
       <main className="max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4 pb-8">
         {/* Quick log */}
         <QuickLog />
+        <SleepLog />
 
         {/* Alerts */}
         <AlertsList alerts={alerts} onDismiss={dismissAlert} />
