@@ -23,12 +23,6 @@ const AGE_6_MONTHS = {
     feedsPerDay: [4, 6],
     totalDailyMl: [700, 900],
   },
-  sleep: {
-    totalHours: [12, 15],
-    nightStretchH: [6, 10],
-    napsPerDay: [2, 4],
-    napDurationMin: [30, 90],
-  },
 };
 
 function avgVolumeLast24h(feeds: FeedRecord[], now: Date): number {

@@ -1,15 +1,7 @@
 import { differenceInHours, subDays } from 'date-fns';
-import type { FeedRecord, Alert, TwinsSyncStatus, BabyName, TimeSlotId } from '../types';
-import { PROFILES, SYNC_THRESHOLDS } from '../data/knowledge';
+import type { FeedRecord, Alert, TwinsSyncStatus, BabyName } from '../types';
+import { PROFILES, SYNC_THRESHOLDS, getSlotId } from '../data/knowledge';
 import { computeSlotVolume } from './predictor';
-
-function getSlotId(hour: number): TimeSlotId {
-  if (hour >= 6 && hour < 10) return 'morning';
-  if (hour >= 10 && hour < 14) return 'midday';
-  if (hour >= 14 && hour < 18) return 'afternoon';
-  if (hour >= 18 && hour < 22) return 'evening';
-  return 'night';
-}
 
 export function generateAlerts(
   feeds: FeedRecord[],

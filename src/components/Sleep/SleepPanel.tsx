@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Moon, Clock, Lightbulb, BookOpen } from 'lucide-react';
@@ -73,11 +74,11 @@ function pickHourlyInsight(insights: FeedSleepAnalysis | null, hour: number) {
 }
 
 export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProps) {
-  const coletteInsight = pickHourlyInsight(feedSleepInsights.colette, hour);
-  const isaureInsight = pickHourlyInsight(feedSleepInsights.isaure, hour);
+  const coletteInsight = useMemo(() => pickHourlyInsight(feedSleepInsights.colette, hour), [feedSleepInsights.colette, hour]);
+  const isaureInsight = useMemo(() => pickHourlyInsight(feedSleepInsights.isaure, hour), [feedSleepInsights.isaure, hour]);
   const hasInsights = coletteInsight || isaureInsight;
 
-  const facts = getHourlyFacts(hour);
+  const facts = useMemo(() => getHourlyFacts(hour), [hour]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">

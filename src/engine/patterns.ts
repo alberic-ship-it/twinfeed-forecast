@@ -124,7 +124,7 @@ export function detectPatterns(
     }
   }
 
-  // --- DESYNC (twin-specific) ---
+  // --- DESYNC (twin-specific, informational only — no timing/volume modifier) ---
   const otherBaby: BabyName = baby === 'colette' ? 'isaure' : 'colette';
   const otherFeeds = allFeeds
     .filter((f) => f.baby === otherBaby)

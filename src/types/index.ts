@@ -181,34 +181,6 @@ export interface Alert {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Knowledge Base (YAML structures)
-// ═══════════════════════════════════════════════════════════════════════════
-
-export interface KnowledgeBase {
-  ageProfiles: Record<string, AgeProfile>;
-  patterns: Record<string, PatternDef>;
-  messageTemplates: Record<string, string>;
-}
-
-export interface AgeProfile {
-  label: string;
-  feeding: {
-    typicalVolumeMl: [number, number];
-    typicalIntervalH: [number, number];
-    feedsPerDay: [number, number];
-  };
-}
-
-export interface PatternDef {
-  id: PatternId;
-  label: string;
-  description: string;
-  timingModifier?: number;
-  volumeModifier?: number;
-  messageTemplate: string;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // Feed-Sleep Insights
 // ═══════════════════════════════════════════════════════════════════════════
 

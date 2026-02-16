@@ -7,30 +7,19 @@ import type {
   TimingPrediction,
   VolumePrediction,
   Explanation,
-  TimeSlotId,
 } from '../types';
 import { PROFILES } from '../data/knowledge';
+import { INTERVAL_FILTER, getSlotId } from '../data/knowledge';
 import { detectPatterns } from './patterns';
 import { recencyWeight, weightedMedian } from './recency';
+
+// Re-export for backwards compatibility (consumers may import from predictor)
+export { INTERVAL_FILTER, getSlotId };
 
 function getSlotForHour(hour: number, baby: BabyName) {
   const profile = PROFILES[baby];
   return profile.slots.find((s) => s.hours.includes(hour)) ?? profile.slots[0];
 }
-
-function getSlotId(hour: number): TimeSlotId {
-  if (hour >= 6 && hour < 10) return 'morning';
-  if (hour >= 10 && hour < 14) return 'midday';
-  if (hour >= 14 && hour < 18) return 'afternoon';
-  if (hour >= 18 && hour < 22) return 'evening';
-  return 'night';
-}
-
-/**
- * Shared interval filter: only keep intervals between 0.5h and 12h.
- * Used across the app to filter out noise (too short = same feed, too long = missed data).
- */
-export const INTERVAL_FILTER = { minH: 0.5, maxH: 12 };
 
 function computeConfidence(feedCount: number): 'high' | 'medium' | 'low' {
   if (feedCount >= 50) return 'high';
@@ -131,7 +120,10 @@ export function predictNextFeed(
   let predictedMl = vol.meanMl;
   const stdMl = vol.stdMl;
 
-  // Apply pattern modifiers on volume
+  // Apply pattern modifiers on volume (stacks multiplicatively with profile adjustments below).
+  // Example: EVENING pattern ×1.10 + evening_boost ×1.14 = ×1.25 total.
+  // This is intentional: patterns capture generic time-of-day effects,
+  // profile adjustments capture baby-specific calibration.
   for (const pattern of patterns) {
     if (pattern.volumeModifier && pattern.volumeModifier !== 1) {
       predictedMl *= pattern.volumeModifier;
@@ -334,8 +326,13 @@ function predictFromProfile(
     },
     explanations: [
       {
+        ruleId: 'PROFILE_NO_FRESH',
+        text: 'Pas de saisie récente — projection basée sur l\'historique',
+        impact: 'mode profil',
+      },
+      {
         ruleId: 'PROFILE_SLOT',
-        text: `Créneau ${slotLabel.toLowerCase()} — intervalle moyen ${nextIntervalH.toFixed(1)}h`,
+        text: `Créneau ${slotLabel} — intervalle moyen ${nextIntervalH.toFixed(1)}h`,
         impact: `~${vol.meanMl}ml`,
       },
       {

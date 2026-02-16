@@ -7,7 +7,7 @@ import type {
   FeedSleepInsight,
   InsightConfidence,
 } from '../types';
-import { PROFILES } from '../data/knowledge';
+import { PROFILES, NIGHT_SLEEP } from '../data/knowledge';
 import { recencyWeight, weightedMedian, weightedAvg } from './recency';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -219,7 +219,7 @@ function computeEveningFeedNightStretch(
 
   // Night sleeps: starts >= 19h, duration > 120 min (aligned with sleep.ts)
   const nightSleeps = sleeps.filter(
-    (s) => s.startTime.getHours() >= 19 && s.durationMin > 120,
+    (s) => s.startTime.getHours() >= NIGHT_SLEEP.minStartHour && s.durationMin > NIGHT_SLEEP.minDurationMin,
   );
 
   for (const ns of nightSleeps) {
@@ -595,7 +595,7 @@ export function analyzeFeedSleepLinks(
 
   // Night sleeps (starts >= 19h, duration > 120 min — aligned with sleep.ts)
   const nightSleeps = sleeps.filter(
-    (s) => s.startTime.getHours() >= 19 && s.durationMin > 120,
+    (s) => s.startTime.getHours() >= NIGHT_SLEEP.minStartHour && s.durationMin > NIGHT_SLEEP.minDurationMin,
   );
 
   const hour = now.getHours();

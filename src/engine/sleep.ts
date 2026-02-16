@@ -1,6 +1,6 @@
 import { differenceInMinutes } from 'date-fns';
 import type { SleepRecord, FeedRecord, BabyName } from '../types';
-import { DEFAULT_SLEEP } from '../data/knowledge';
+import { DEFAULT_SLEEP, NIGHT_SLEEP } from '../data/knowledge';
 import { recencyWeight, weightedMedian, weightedAvg } from './recency';
 
 export interface SleepPrediction {
@@ -186,7 +186,7 @@ export function analyzeSleep(
 
   // Compute median bedtime from history (night sleeps starting >= 19h)
   const nightSleeps = babySleeps.filter(
-    (s) => s.startTime.getHours() >= 19 && s.durationMin > 120,
+    (s) => s.startTime.getHours() >= NIGHT_SLEEP.minStartHour && s.durationMin > NIGHT_SLEEP.minDurationMin,
   );
 
   const bedtimeMinutes = nightSleeps.map(

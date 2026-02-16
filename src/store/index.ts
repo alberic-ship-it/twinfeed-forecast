@@ -42,7 +42,6 @@ interface Store {
   logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number) => void;
   logSleep: (baby: BabyName, durationMin: number) => void;
   refreshPredictions: () => void;
-  refreshInsights: () => void;
   dismissAlert: (id: string) => void;
   reset: () => void;
 }
@@ -63,6 +62,18 @@ function saveDismissed(ids: Set<string>) {
   sessionStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
 }
 const dismissedAlertIds = loadDismissed();
+
+/** Internal: refresh feed-sleep insights. Not exposed on the public Store interface. */
+function _refreshInsights(get: () => Store, set: (partial: Partial<Store>) => void) {
+  const { feeds, sleeps } = get();
+  const now = new Date();
+  set({
+    feedSleepInsights: {
+      colette: analyzeFeedSleepLinks('colette', feeds, sleeps, now),
+      isaure: analyzeFeedSleepLinks('isaure', feeds, sleeps, now),
+    },
+  });
+}
 
 export const useStore = create<Store>((set, get) => ({
   screen: 'dashboard',
@@ -86,7 +97,7 @@ export const useStore = create<Store>((set, get) => ({
   loadData: (feeds, sleeps) => {
     set({ feeds, sleeps, dataLoaded: true });
     get().refreshPredictions();
-    get().refreshInsights();
+    _refreshInsights(get, set);
     set({ screen: 'dashboard' });
   },
 
@@ -96,7 +107,7 @@ export const useStore = create<Store>((set, get) => ({
     const allSleeps = mergeSleeps(sleeps, newSleeps);
     set({ feeds: allFeeds, sleeps: allSleeps, dataLoaded: true });
     get().refreshPredictions();
-    get().refreshInsights();
+    _refreshInsights(get, set);
 
     // Push only non-seed entries to server
     const nonSeedFeeds = allFeeds.filter((f) => !seedFeedIds.has(f.id));
@@ -138,7 +149,7 @@ export const useStore = create<Store>((set, get) => ({
     );
     set({ sleeps: allSleeps, dataLoaded: true });
     get().refreshPredictions();
-    get().refreshInsights();
+    _refreshInsights(get, set);
 
     // Push to server
     pushEntries([], [sleep]).catch(() => {});
@@ -167,18 +178,7 @@ export const useStore = create<Store>((set, get) => ({
       sleepAnalyses: { colette: coletteSleep, isaure: isaureSleep },
       lastUpdated: now,
     });
-    get().refreshInsights();
-  },
-
-  refreshInsights: () => {
-    const { feeds, sleeps } = get();
-    const now = new Date();
-    set({
-      feedSleepInsights: {
-        colette: analyzeFeedSleepLinks('colette', feeds, sleeps, now),
-        isaure: analyzeFeedSleepLinks('isaure', feeds, sleeps, now),
-      },
-    });
+    _refreshInsights(get, set);
   },
 
   dismissAlert: (id) => {
@@ -201,6 +201,10 @@ export const useStore = create<Store>((set, get) => ({
       alerts: [],
       patterns: [],
       feedSleepInsights: { colette: null, isaure: null },
+      sleepAnalyses: {
+        colette: analyzeSleep('colette', [], [], new Date()),
+        isaure: analyzeSleep('isaure', [], [], new Date()),
+      },
       dataLoaded: false,
       lastUpdated: null,
     });
@@ -325,7 +329,6 @@ export async function syncFromServer() {
     if (newFeeds.length !== feeds.length || newSleeps.length !== sleeps.length) {
       useStore.setState({ feeds: newFeeds, sleeps: newSleeps });
       useStore.getState().refreshPredictions();
-      useStore.getState().refreshInsights();
     }
   } catch {
     // Server unreachable — ignore

@@ -1,4 +1,22 @@
-import type { BabyProfile, TimeSlot, BabyName } from '../types';
+import type { BabyProfile, TimeSlot, BabyName, TimeSlotId } from '../types';
+
+/**
+ * Shared interval filter: only keep intervals between 0.5h and 12h.
+ * Used across the app to filter out noise (too short = same feed, too long = missed data).
+ */
+export const INTERVAL_FILTER = { minH: 0.5, maxH: 12 };
+
+/**
+ * Map an hour (0-23) to the corresponding time slot.
+ * Boundaries: morning 6-9, midday 10-13, afternoon 14-17, evening 18-21, night 22-5.
+ */
+export function getSlotId(hour: number): TimeSlotId {
+  if (hour >= 6 && hour < 10) return 'morning';
+  if (hour >= 10 && hour < 14) return 'midday';
+  if (hour >= 14 && hour < 18) return 'afternoon';
+  if (hour >= 18 && hour < 22) return 'evening';
+  return 'night';
+}
 
 // Hardcoded from profiles.yaml and config.yaml — no need for runtime YAML parsing
 // since these are static knowledge base values
@@ -81,6 +99,12 @@ export const BEST_SYNC_WINDOWS = [
   { start: 17, end: 18, label: 'Fin après-midi' },
   { start: 20, end: 21, label: 'Avant coucher' },
 ];
+
+// Seuil pour identifier un sommeil de nuit (vs sieste)
+export const NIGHT_SLEEP = {
+  minStartHour: 19,
+  minDurationMin: 120,
+};
 
 // Wake windows pour bébés 4-6 mois (en minutes)
 // Reference data — used by sleep.ts nap prediction fallback logic
