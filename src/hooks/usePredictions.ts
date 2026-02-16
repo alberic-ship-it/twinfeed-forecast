@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
-import { useStore, restoreFromStorage } from '../store';
+import { useStore, initData, syncFromServer } from '../store';
 
 export function usePredictions() {
   const predictions = useStore((s) => s.predictions);
   const syncStatus = useStore((s) => s.syncStatus);
   const alerts = useStore((s) => s.alerts);
   const patterns = useStore((s) => s.patterns);
+  const sleepAnalyses = useStore((s) => s.sleepAnalyses);
   const feeds = useStore((s) => s.feeds);
   const sleeps = useStore((s) => s.sleeps);
   const dataLoaded = useStore((s) => s.dataLoaded);
@@ -26,6 +27,7 @@ export function usePredictions() {
     syncStatus,
     alerts,
     patterns,
+    sleepAnalyses,
     feeds,
     sleeps,
     dataLoaded,
@@ -36,10 +38,14 @@ export function usePredictions() {
 
 export function useInitApp() {
   useEffect(() => {
-    const restored = restoreFromStorage();
-    if (!restored) {
-      // No saved data — still generate profile-based predictions
-      useStore.getState().refreshPredictions();
-    }
+    // Load seed CSVs + fetch shared entries from server
+    initData();
+
+    // Poll server every 30s for updates from other users
+    const interval = setInterval(() => {
+      syncFromServer();
+    }, 30_000);
+
+    return () => clearInterval(interval);
   }, []);
 }

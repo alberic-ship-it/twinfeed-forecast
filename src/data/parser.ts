@@ -10,6 +10,14 @@ function parseDateTime(dateStr: string): Date | null {
   }
 }
 
+/**
+ * Generate a deterministic ID from record content.
+ * Same data always produces the same ID → proper deduplication on merge.
+ */
+function deterministicId(parts: (string | number)[]): string {
+  return parts.join('|');
+}
+
 export function parseCsv(
   csvText: string,
   baby: BabyName,
@@ -35,13 +43,15 @@ export function parseCsv(
       const volumeMl = volumeStr ? parseFloat(volumeStr) : 0;
       const durationStr = row['Durée (mn)']?.trim();
       const durationMin = durationStr ? parseFloat(durationStr) : undefined;
+      const type = activity === 'Biberon' ? 'bottle' : 'breast';
+      const vol = isNaN(volumeMl) ? 0 : volumeMl;
 
       feeds.push({
-        id: crypto.randomUUID(),
+        id: deterministicId(['f', baby, timestamp.toISOString(), type, vol]),
         baby,
         timestamp,
-        type: activity === 'Biberon' ? 'bottle' : 'breast',
-        volumeMl: isNaN(volumeMl) ? 0 : volumeMl,
+        type,
+        volumeMl: vol,
         durationMin: durationMin && !isNaN(durationMin) ? durationMin : undefined,
         notes: row['Notes']?.trim() || undefined,
       });
@@ -50,13 +60,14 @@ export function parseCsv(
       const durationMin = durationStr ? parseFloat(durationStr) : 0;
       const endStr = row['Heure de fin']?.trim();
       const endTime = endStr ? parseDateTime(endStr) : undefined;
+      const dur = isNaN(durationMin) ? 0 : durationMin;
 
       sleeps.push({
-        id: crypto.randomUUID(),
+        id: deterministicId(['s', baby, timestamp.toISOString(), dur]),
         baby,
         startTime: timestamp,
         endTime: endTime ?? undefined,
-        durationMin: isNaN(durationMin) ? 0 : durationMin,
+        durationMin: dur,
       });
     }
   }

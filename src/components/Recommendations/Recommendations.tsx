@@ -14,10 +14,10 @@ const CATEGORY_ICONS = {
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  pattern: 'Patterns',
+  pattern: 'Rythmes',
   feeding: 'Alimentation',
   sleep: 'Sommeil',
-  development: 'Developpement',
+  development: 'Développement',
   twins: 'Jumelles',
 };
 

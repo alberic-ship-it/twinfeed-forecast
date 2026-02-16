@@ -1,5 +1,5 @@
 import type { BabyName, FeedRecord, DetectedPattern, Prediction, TwinsSyncStatus } from '../types';
-import { PROFILES } from './knowledge';
+import { PROFILES, SYNC_THRESHOLDS } from './knowledge';
 
 export type RecommendationType = 'info' | 'suggestion' | 'reassurance' | 'benchmark';
 
@@ -67,8 +67,8 @@ export function generateRecommendations(
       recs.push({
         id: `cluster-${baby}`,
         baby,
-        title: 'Cluster feeding detecte',
-        message: `${profile.name} a eu plusieurs petits repas rapproches. L'intervalle apres devrait etre plus long que d'habitude.`,
+        title: 'Cluster feeding détecté',
+        message: `${profile.name} a eu plusieurs petits repas rapprochés. L'intervalle après devrait être plus long que d'habitude.`,
         type: 'info',
         category: 'pattern',
       });
@@ -80,7 +80,7 @@ export function generateRecommendations(
         id: `growth-${baby}`,
         baby,
         title: 'Possible pic de croissance',
-        message: `${profile.name} mange plus que d'habitude depuis 2 jours. C'est normal et ca dure generalement 2-3 jours.`,
+        message: `${profile.name} mange plus que d'habitude depuis 2 jours. C'est normal et ça dure généralement 2-3 jours.`,
         type: 'reassurance',
         category: 'pattern',
       });
@@ -92,20 +92,24 @@ export function generateRecommendations(
         id: `compensation-${baby}`,
         baby,
         title: 'Petit repas',
-        message: `${profile.name} a mange moins que d'habitude. Elle pourrait reclamer un peu plus tot.`,
+        message: `${profile.name} a mangé moins que d'habitude. Elle pourrait réclamer un peu plus tôt.`,
         type: 'suggestion',
         category: 'pattern',
       });
     }
 
     if (prediction && prediction.volume.predictedMl > 0) {
-      const slotLabel = prediction.slot === 'evening' ? 'le soir' : prediction.slot === 'night' ? 'la nuit' : '';
-      if (prediction.slot === 'evening' && profile.key === 'colette') {
+      const peakSlot = profile.slots.find((s) => s.peak);
+      if (peakSlot && prediction.slot === peakSlot.id) {
+        const slotLabel = prediction.slot === 'evening' ? 'le soir'
+          : prediction.slot === 'midday' ? 'à mi-journée'
+          : prediction.slot === 'morning' ? 'le matin'
+          : prediction.slot === 'afternoon' ? 'l\'après-midi' : '';
         recs.push({
-          id: `evening-peak-${baby}`,
+          id: `peak-slot-${baby}`,
           baby,
-          title: 'Creneau pic',
-          message: `C'est le moment ou ${profile.name} mange generalement le plus (~${Math.round(prediction.volume.predictedMl)}ml). Preparez un biberon un peu plus grand ${slotLabel}.`,
+          title: 'Créneau pic',
+          message: `C'est le moment où ${profile.name} mange généralement le plus (~${Math.round(prediction.volume.predictedMl)}ml). Préparez un biberon un peu plus grand ${slotLabel}.`,
           type: 'suggestion',
           category: 'pattern',
         });
@@ -121,7 +125,7 @@ export function generateRecommendations(
           id: `low-volume-benchmark-${baby}`,
           baby,
           title: `${profile.name} : volume en dessous de la moyenne`,
-          message: `Volume moyen sur 24h : ~${Math.round(avg24h)}ml par repas. La fourchette typique a 6 mois est ${lowTypical}-${highTypical}ml. Si ca persiste, observez les signes de faim.`,
+          message: `Volume moyen sur 24h : ~${Math.round(avg24h)}ml par repas. La fourchette typique à 6 mois est ${lowTypical}-${highTypical}ml. Si ça persiste, observez les signes de faim.`,
           type: 'benchmark',
           category: 'feeding',
         });
@@ -129,7 +133,7 @@ export function generateRecommendations(
         recs.push({
           id: `high-volume-benchmark-${baby}`,
           baby,
-          title: `${profile.name} : bel appetit !`,
+          title: `${profile.name} : bel appétit !`,
           message: `Volume moyen sur 24h : ~${Math.round(avg24h)}ml par repas. C'est au-dessus de la moyenne pour 6 mois (${lowTypical}-${highTypical}ml). Possible pic de croissance ou besoins accrus.`,
           type: 'benchmark',
           category: 'feeding',
@@ -139,11 +143,12 @@ export function generateRecommendations(
   }
 
   // ── Twin sync recommendation ──
-  if (syncStatus && syncStatus.state === 'desynchronized') {
+  // Aligned with alerts.ts: only show desync recommendation at same threshold (60 min)
+  if (syncStatus && syncStatus.gapMinutes > SYNC_THRESHOLDS.desyncAlert) {
     recs.push({
       id: 'sync-suggestion',
-      title: 'Desynchronisation',
-      message: `Les jumelles sont decalees de ${Math.round(syncStatus.gapMinutes)} min. ${syncStatus.suggestion ?? 'Essayez de rapprocher les prochains repas.'}`,
+      title: 'Désynchronisation',
+      message: `Les jumelles sont décalées de ${Math.round(syncStatus.gapMinutes)} min. ${syncStatus.suggestion ?? 'Essayez de rapprocher les prochains repas.'}`,
       type: 'suggestion',
       category: 'twins',
     });

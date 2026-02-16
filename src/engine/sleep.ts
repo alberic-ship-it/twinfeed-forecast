@@ -1,6 +1,7 @@
 import { differenceInMinutes } from 'date-fns';
 import type { SleepRecord, FeedRecord, BabyName } from '../types';
 import { DEFAULT_SLEEP } from '../data/knowledge';
+import { recencyWeight, weightedMedian, weightedAvg } from './recency';
 
 export interface SleepPrediction {
   predictedTime: Date;
@@ -14,18 +15,13 @@ export interface SleepAnalysis {
   napsToday: number;
   nextNap: SleepPrediction | null;
   bedtime: SleepPrediction | null;
+  /** Data-driven median inter-nap interval (minutes), null if insufficient data */
+  medianInterNapMin: number | null;
+  /** Data-driven average nap duration (minutes) */
+  avgNapDurationMin: number;
 }
 
 // ── Helpers ──
-
-function median(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
-}
 
 /**
  * Find the last feed before a given time, within maxMinBefore minutes.
@@ -77,40 +73,47 @@ export function analyzeSleep(
   const totalSleepToday = todayNaps.reduce((sum, s) => sum + s.durationMin, 0);
   const napsToday = todayNaps.length;
 
-  // ── Compute median feed→nap latency from history ──
+  // ── Compute median feed→nap latency from history (weighted by recency) ──
   const allNaps = babySleeps.filter(
     (s) => s.startTime.getHours() >= 6 && s.startTime.getHours() < 21,
   );
 
   const latencies: number[] = [];
+  const latencyWeights: number[] = [];
   for (const nap of allNaps) {
     const lastFeed = findLastFeedBefore(babyFeeds, nap.startTime, 180);
     if (!lastFeed) continue;
     const latency = differenceInMinutes(nap.startTime, lastFeed.timestamp);
-    if (latency > 0) latencies.push(latency);
+    if (latency > 0) {
+      latencies.push(latency);
+      latencyWeights.push(recencyWeight(nap.startTime, now));
+    }
   }
-  const medianLatency = latencies.length >= 3 ? median(latencies) : null;
+  const medianLatency = latencies.length >= 3 ? weightedMedian(latencies, latencyWeights) : null;
 
-  // ── Compute median inter-nap interval from history ──
+  // ── Compute median inter-nap interval from history (weighted by recency) ──
   const interNapIntervals: number[] = [];
+  const interNapWeights: number[] = [];
   for (let i = 1; i < allNaps.length; i++) {
     const prev = allNaps[i - 1];
     const curr = allNaps[i];
     if (prev.endTime) {
       const gap = differenceInMinutes(curr.startTime, prev.endTime);
-      if (gap > 0 && gap < 360) interNapIntervals.push(gap);
+      if (gap > 0 && gap < 360) {
+        interNapIntervals.push(gap);
+        interNapWeights.push(recencyWeight(curr.startTime, now));
+      }
     }
   }
   const medianInterNap =
-    interNapIntervals.length >= 3 ? median(interNapIntervals) : null;
+    interNapIntervals.length >= 3 ? weightedMedian(interNapIntervals, interNapWeights) : null;
 
-  // ── Compute average nap duration from history ──
+  // ── Compute average nap duration from history (weighted by recency) ──
   const napDurations = allNaps.map((n) => n.durationMin);
+  const napDurWeights = allNaps.map((n) => recencyWeight(n.startTime, now));
   const avgNapDuration =
     napDurations.length >= 3
-      ? Math.round(
-          napDurations.reduce((s, d) => s + d, 0) / napDurations.length,
-        )
+      ? Math.round(weightedAvg(napDurations, napDurWeights))
       : defaults.napDurationMin;
 
   // ── Next nap prediction ──
@@ -190,17 +193,16 @@ export function analyzeSleep(
     (s) => s.startTime.getHours() * 60 + s.startTime.getMinutes(),
   );
   const nightDurations = nightSleeps.map((s) => s.durationMin);
+  const nightWeights = nightSleeps.map((s) => recencyWeight(s.startTime, now));
 
   const medianBedtimeMin =
     bedtimeMinutes.length >= 3
-      ? median(bedtimeMinutes)
+      ? weightedMedian(bedtimeMinutes, nightWeights)
       : defaults.typicalBedtimeHour * 60;
 
   const avgNightDuration =
     nightDurations.length >= 3
-      ? Math.round(
-          nightDurations.reduce((s, d) => s + d, 0) / nightDurations.length,
-        )
+      ? Math.round(weightedAvg(nightDurations, nightWeights))
       : defaults.nightDurationMin;
 
   const bedtimeDate = new Date(now);
@@ -226,5 +228,7 @@ export function analyzeSleep(
     napsToday,
     nextNap,
     bedtime,
+    medianInterNapMin: medianInterNap,
+    avgNapDurationMin: avgNapDuration,
   };
 }

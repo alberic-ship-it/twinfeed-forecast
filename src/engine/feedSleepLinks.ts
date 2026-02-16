@@ -8,6 +8,7 @@ import type {
   InsightConfidence,
 } from '../types';
 import { PROFILES } from '../data/knowledge';
+import { recencyWeight, weightedMedian, weightedAvg } from './recency';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
@@ -84,26 +85,36 @@ function computePreSleepFeedImpact(
   baby: BabyName,
   bottles: FeedRecord[],
   naps: SleepRecord[],
+  now: Date,
 ): FeedSleepInsight | null {
-  const pairs: { volume: number; napDuration: number }[] = [];
+  const pairs: { volume: number; napDuration: number; time: Date }[] = [];
 
   for (const nap of naps) {
     const lastBottle = findLastFeedBefore(bottles, nap.startTime, 120);
     if (lastBottle && lastBottle.volumeMl > 0) {
-      pairs.push({ volume: lastBottle.volumeMl, napDuration: nap.durationMin });
+      pairs.push({ volume: lastBottle.volumeMl, napDuration: nap.durationMin, time: nap.startTime });
     }
   }
 
   if (pairs.length < MIN_DATA_POINTS) return null;
 
-  const medianVol = median(pairs.map((p) => p.volume));
+  const medianVol = weightedMedian(
+    pairs.map((p) => p.volume),
+    pairs.map((p) => recencyWeight(p.time, now)),
+  );
   const big = pairs.filter((p) => p.volume > medianVol);
   const small = pairs.filter((p) => p.volume <= medianVol);
 
   if (big.length < 3 || small.length < 3) return null;
 
-  const avgBig = avg(big.map((p) => p.napDuration));
-  const avgSmall = avg(small.map((p) => p.napDuration));
+  const avgBig = weightedAvg(
+    big.map((p) => p.napDuration),
+    big.map((p) => recencyWeight(p.time, now)),
+  );
+  const avgSmall = weightedAvg(
+    small.map((p) => p.napDuration),
+    small.map((p) => recencyWeight(p.time, now)),
+  );
   const diff = Math.round(avgBig - avgSmall);
 
   if (Math.abs(diff) < 5) return null;
@@ -131,9 +142,10 @@ function computePostNapAppetite(
   baby: BabyName,
   bottles: FeedRecord[],
   naps: SleepRecord[],
+  now: Date,
 ): FeedSleepInsight | null {
-  const longNapFeeds: { volume: number; latencyMin: number }[] = [];
-  const shortNapFeeds: { volume: number; latencyMin: number }[] = [];
+  const longNapFeeds: { volume: number; latencyMin: number; time: Date }[] = [];
+  const shortNapFeeds: { volume: number; latencyMin: number; time: Date }[] = [];
 
   for (const nap of naps) {
     if (!nap.endTime) continue;
@@ -141,7 +153,7 @@ function computePostNapAppetite(
     if (!nextFeed || nextFeed.volumeMl <= 0) continue;
 
     const latency = differenceInMinutes(nextFeed.timestamp, nap.endTime);
-    const entry = { volume: nextFeed.volumeMl, latencyMin: latency };
+    const entry = { volume: nextFeed.volumeMl, latencyMin: latency, time: nap.startTime };
 
     if (nap.durationMin >= 45) {
       longNapFeeds.push(entry);
@@ -154,10 +166,10 @@ function computePostNapAppetite(
   const total = longNapFeeds.length + shortNapFeeds.length;
   if (total < MIN_DATA_POINTS) return null;
 
-  const avgVolLong = avg(longNapFeeds.map((f) => f.volume));
-  const avgVolShort = avg(shortNapFeeds.map((f) => f.volume));
-  const avgLatLong = avg(longNapFeeds.map((f) => f.latencyMin));
-  const avgLatShort = avg(shortNapFeeds.map((f) => f.latencyMin));
+  const avgVolLong = weightedAvg(longNapFeeds.map((f) => f.volume), longNapFeeds.map((f) => recencyWeight(f.time, now)));
+  const avgVolShort = weightedAvg(shortNapFeeds.map((f) => f.volume), shortNapFeeds.map((f) => recencyWeight(f.time, now)));
+  const avgLatLong = weightedAvg(longNapFeeds.map((f) => f.latencyMin), longNapFeeds.map((f) => recencyWeight(f.time, now)));
+  const avgLatShort = weightedAvg(shortNapFeeds.map((f) => f.latencyMin), shortNapFeeds.map((f) => recencyWeight(f.time, now)));
 
   const volDiff = Math.round(avgVolLong - avgVolShort);
   const latDiff = Math.round(avgLatLong - avgLatShort);
@@ -197,24 +209,25 @@ function computeEveningFeedNightStretch(
   baby: BabyName,
   bottles: FeedRecord[],
   sleeps: SleepRecord[],
+  now: Date,
 ): FeedSleepInsight | null {
   // Group evening bottles and night sleeps by day
   const dayMap = new Map<
     string,
-    { eveningVolume: number; nightDuration: number }
+    { eveningVolume: number; nightDuration: number; date: Date }
   >();
 
-  // Night sleeps: starts >= 20h, duration > 120 min
+  // Night sleeps: starts >= 19h, duration > 120 min (aligned with sleep.ts)
   const nightSleeps = sleeps.filter(
-    (s) => s.startTime.getHours() >= 20 && s.durationMin > 120,
+    (s) => s.startTime.getHours() >= 19 && s.durationMin > 120,
   );
 
   for (const ns of nightSleeps) {
     const dayKey = startOfDay(ns.startTime).toISOString();
-    // Sum evening bottles (17-21h) for that day
+    // Sum evening bottles (18-22h) for that day — aligned with evening slot
     const dayStart = startOfDay(ns.startTime);
-    const eveningStart = addHours(dayStart, 17);
-    const eveningEnd = addHours(dayStart, 21);
+    const eveningStart = addHours(dayStart, 18);
+    const eveningEnd = addHours(dayStart, 22);
 
     const eveningVol = bottles
       .filter(
@@ -229,6 +242,7 @@ function computeEveningFeedNightStretch(
       dayMap.set(dayKey, {
         eveningVolume: eveningVol,
         nightDuration: ns.durationMin,
+        date: ns.startTime,
       });
     }
   }
@@ -236,14 +250,15 @@ function computeEveningFeedNightStretch(
   const entries = [...dayMap.values()];
   if (entries.length < MIN_DATA_POINTS) return null;
 
-  const medianVol = median(entries.map((e) => e.eveningVolume));
+  const entryWeights = entries.map((e) => recencyWeight(e.date, now));
+  const medianVol = weightedMedian(entries.map((e) => e.eveningVolume), entryWeights);
   const bigEvening = entries.filter((e) => e.eveningVolume > medianVol);
   const smallEvening = entries.filter((e) => e.eveningVolume <= medianVol);
 
   if (bigEvening.length < 3 || smallEvening.length < 3) return null;
 
-  const avgNightBig = avg(bigEvening.map((e) => e.nightDuration));
-  const avgNightSmall = avg(smallEvening.map((e) => e.nightDuration));
+  const avgNightBig = weightedAvg(bigEvening.map((e) => e.nightDuration), bigEvening.map((e) => recencyWeight(e.date, now)));
+  const avgNightSmall = weightedAvg(smallEvening.map((e) => e.nightDuration), smallEvening.map((e) => recencyWeight(e.date, now)));
   const diff = Math.round(avgNightBig - avgNightSmall);
 
   if (Math.abs(diff) < 5) return null;
@@ -270,19 +285,24 @@ function computeFeedToSleepLatency(
   baby: BabyName,
   allFeeds: FeedRecord[],
   naps: SleepRecord[],
+  now: Date,
 ): FeedSleepInsight | null {
   const latencies: number[] = [];
+  const latWeights: number[] = [];
 
   for (const nap of naps) {
     const lastFeed = findLastFeedBefore(allFeeds, nap.startTime, 180);
     if (!lastFeed) continue;
     const latency = differenceInMinutes(nap.startTime, lastFeed.timestamp);
-    if (latency > 0) latencies.push(latency);
+    if (latency > 0) {
+      latencies.push(latency);
+      latWeights.push(recencyWeight(nap.startTime, now));
+    }
   }
 
   if (latencies.length < MIN_DATA_POINTS) return null;
 
-  const med = Math.round(median(latencies));
+  const med = Math.round(weightedMedian(latencies, latWeights));
   const p25 = Math.round(percentile(latencies, 25));
   const p75 = Math.round(percentile(latencies, 75));
 
@@ -307,6 +327,7 @@ function computeClusterThenSleep(
   baby: BabyName,
   allFeeds: FeedRecord[],
   sleeps: SleepRecord[],
+  now: Date,
 ): FeedSleepInsight | null {
   // Detect cluster episodes: 3+ feeds within 180 min window
   const clusterEndTimes: Date[] = [];
@@ -344,9 +365,10 @@ function computeClusterThenSleep(
 
   if (postClusterDurations.length < MIN_DATA_POINTS) return null;
 
-  // Compare to non-cluster average sleep duration
+  // Compare to non-cluster average sleep duration (weighted by recency)
   const allDurations = sleeps.map((s) => s.durationMin);
-  const avgAll = avg(allDurations);
+  const allDurWeights = sleeps.map((s) => recencyWeight(s.startTime, now));
+  const avgAll = weightedAvg(allDurations, allDurWeights);
   const avgPostCluster = avg(postClusterDurations);
   const diff = Math.round(avgPostCluster - avgAll);
 
@@ -376,6 +398,7 @@ function computeHourlyContextInsights(
   naps: SleepRecord[],
   nightSleeps: SleepRecord[],
   hour: number,
+  now: Date,
 ): FeedSleepInsight[] {
   const name = PROFILES[baby].name;
   const results: FeedSleepInsight[] = [];
@@ -476,26 +499,27 @@ function computeHourlyContextInsights(
     }
   } else if (hour >= 18 && hour < 22) {
     // Soir : corrélation volume soir → 1er stretch de nuit
-    const dayMap = new Map<string, { vol: number; stretch: number }>();
+    const dayMap = new Map<string, { vol: number; stretch: number; date: Date }>();
     for (const ns of nightSleeps) {
       const dayKey = startOfDay(ns.startTime).toISOString();
       const dayStart = startOfDay(ns.startTime);
-      const evStart = addHours(dayStart, 17);
+      const evStart = addHours(dayStart, 18);
       const evEnd = addHours(dayStart, 22);
       const vol = bottles
         .filter((f) => f.timestamp >= evStart && f.timestamp < evEnd)
         .reduce((s, f) => s + f.volumeMl, 0);
-      if (vol > 0) dayMap.set(dayKey, { vol, stretch: ns.durationMin });
+      if (vol > 0) dayMap.set(dayKey, { vol, stretch: ns.durationMin, date: ns.startTime });
     }
 
     const entries = [...dayMap.values()];
     if (entries.length >= 5) {
-      const medVol = median(entries.map((e) => e.vol));
+      const ew = entries.map((e) => recencyWeight(e.date, now));
+      const medVol = weightedMedian(entries.map((e) => e.vol), ew);
       const big = entries.filter((e) => e.vol > medVol);
       const small = entries.filter((e) => e.vol <= medVol);
       if (big.length >= 2 && small.length >= 2) {
-        const avgBig = Math.round(avg(big.map((e) => e.stretch)));
-        const avgSmall = Math.round(avg(small.map((e) => e.stretch)));
+        const avgBig = Math.round(weightedAvg(big.map((e) => e.stretch), big.map((e) => recencyWeight(e.date, now))));
+        const avgSmall = Math.round(weightedAvg(small.map((e) => e.stretch), small.map((e) => recencyWeight(e.date, now))));
         const diff = avgBig - avgSmall;
 
         results.push({
@@ -512,7 +536,7 @@ function computeHourlyContextInsights(
   } else {
     // Nuit (22-6h) : durée 1er stretch, nb réveils
     if (nightSleeps.length >= 3) {
-      const avgStretch = Math.round(avg(nightSleeps.map((s) => s.durationMin)));
+      const avgStretch = Math.round(weightedAvg(nightSleeps.map((s) => s.durationMin), nightSleeps.map((s) => recencyWeight(s.startTime, now))));
       const stretchH = Math.floor(avgStretch / 60);
       const stretchM = avgStretch % 60;
 
@@ -569,22 +593,22 @@ export function analyzeFeedSleepLinks(
     (s) => s.startTime.getHours() >= 6 && s.startTime.getHours() < 21,
   );
 
-  // Night sleeps (starts >= 20h, duration > 120 min)
+  // Night sleeps (starts >= 19h, duration > 120 min — aligned with sleep.ts)
   const nightSleeps = sleeps.filter(
-    (s) => s.startTime.getHours() >= 20 && s.durationMin > 120,
+    (s) => s.startTime.getHours() >= 19 && s.durationMin > 120,
   );
 
   const hour = now.getHours();
 
   const analyses = [
-    computePreSleepFeedImpact(baby, bottles, naps),
-    computePostNapAppetite(baby, bottles, naps),
-    computeEveningFeedNightStretch(baby, bottles, sleeps),
-    computeFeedToSleepLatency(baby, feeds, naps),
-    computeClusterThenSleep(baby, feeds, sleeps),
+    computePreSleepFeedImpact(baby, bottles, naps, now),
+    computePostNapAppetite(baby, bottles, naps, now),
+    computeEveningFeedNightStretch(baby, bottles, sleeps, now),
+    computeFeedToSleepLatency(baby, feeds, naps, now),
+    computeClusterThenSleep(baby, feeds, sleeps, now),
   ];
 
-  const hourlyInsights = computeHourlyContextInsights(baby, bottles, naps, nightSleeps, hour);
+  const hourlyInsights = computeHourlyContextInsights(baby, bottles, naps, nightSleeps, hour, now);
 
   return {
     baby,

@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import { PROFILES } from '../data/knowledge';
 import { detectPatterns } from './patterns';
+import { recencyWeight, weightedMedian } from './recency';
 
 function getSlotForHour(hour: number, baby: BabyName) {
   const profile = PROFILES[baby];
@@ -25,19 +26,11 @@ function getSlotId(hour: number): TimeSlotId {
   return 'night';
 }
 
-function computeMedianInterval(feeds: FeedRecord[]): number {
-  if (feeds.length < 2) return 3.5;
-  const intervals: number[] = [];
-  for (let i = 1; i < feeds.length; i++) {
-    const diffH = (feeds[i].timestamp.getTime() - feeds[i - 1].timestamp.getTime()) / (1000 * 60 * 60);
-    if (diffH > 0.5 && diffH < 12) {
-      intervals.push(diffH);
-    }
-  }
-  if (intervals.length === 0) return 3.5;
-  intervals.sort((a, b) => a - b);
-  return intervals[Math.floor(intervals.length / 2)];
-}
+/**
+ * Shared interval filter: only keep intervals between 0.5h and 12h.
+ * Used across the app to filter out noise (too short = same feed, too long = missed data).
+ */
+export const INTERVAL_FILTER = { minH: 0.5, maxH: 12 };
 
 function computeConfidence(feedCount: number): 'high' | 'medium' | 'low' {
   if (feedCount >= 50) return 'high';
@@ -58,28 +51,29 @@ export function predictNextFeed(
 
   // Fallback: no feed data → prediction based on hardcoded profiles
   if (babyFeeds.length === 0) {
-    return predictFromProfile(baby, now);
+    return predictFromProfile(baby, allFeeds, now);
   }
 
   const lastFeed = babyFeeds[babyFeeds.length - 1];
+
+  // No fresh data → generate a clean profile-based daily plan.
+  // Beyond p90 interval, assume baby ate normally per profile.
+  // No manual entry ≠ baby hasn't eaten.
+  const hoursSinceLastFeed = (now.getTime() - lastFeed.timestamp.getTime()) / (1000 * 60 * 60);
+  if (hoursSinceLastFeed >= profile.stats.p90H) {
+    return predictFromProfile(baby, allFeeds, now);
+  }
+
   const patterns = detectPatterns(baby, allFeeds, allSleeps, now);
   const explanations: Explanation[] = [];
 
   // --- TIMING PREDICTION ---
-  const medianInterval = computeMedianInterval(babyFeeds);
-  let intervalH = medianInterval;
+  // Estimate target hour to pick the right slot, then use data-driven interval
+  const roughHour = (lastFeed.timestamp.getHours() + Math.round(profile.stats.medianIntervalH)) % 24;
+  const targetSlot = getSlotForHour(roughHour, baby);
+  let intervalH = computeSlotInterval(targetSlot.id, baby, allFeeds, now);
 
-  // Apply slot-based interval
-  const predictedHour = (lastFeed.timestamp.getHours() + Math.round(intervalH)) % 24;
-  const targetSlot = getSlotForHour(predictedHour, baby);
-  intervalH = targetSlot.typicalIntervalAfterH;
-  explanations.push({
-    ruleId: 'TIMING_BASE',
-    text: `Intervalle médian : ${medianInterval.toFixed(1)}h`,
-    impact: 'base',
-  });
-
-  // Apply pattern modifiers
+  // Apply pattern modifiers (COMPENSATION -25%, CLUSTER +30%, etc.)
   for (const pattern of patterns) {
     if (pattern.timingModifier && pattern.timingModifier !== 1) {
       intervalH *= pattern.timingModifier;
@@ -92,23 +86,34 @@ export function predictNextFeed(
     }
   }
 
-  // Apply profile adjustments
-  const adj = profile.predictionAdjustments.interval;
-  if (adj.base_multiplier) {
-    intervalH *= adj.base_multiplier;
+  // Apply profile-specific interval adjustments
+  const adjI = profile.predictionAdjustments.interval;
+  if (adjI.base_multiplier && adjI.base_multiplier !== 1) {
+    intervalH *= adjI.base_multiplier;
   }
-  const slotId = getSlotId(predictedHour);
-  if (slotId === 'evening' && adj.evening_reduction) {
-    intervalH *= adj.evening_reduction;
+  const slotId = getSlotId(roughHour);
+  if (slotId === 'evening' && adjI.evening_reduction) {
+    intervalH *= adjI.evening_reduction;
     explanations.push({
       ruleId: 'TIMING_EVENING',
       text: 'Créneau soir — intervalles plus courts',
-      impact: '-15% intervalle',
+      impact: `${Math.round((adjI.evening_reduction - 1) * 100)}% intervalle`,
     });
+  }
+  if (slotId === 'midday' && adjI.midday_extension) {
+    intervalH *= adjI.midday_extension;
   }
 
   const intervalMin = Math.round(intervalH * 60);
-  const predictedTime = addMinutes(lastFeed.timestamp, intervalMin);
+  let predictedTime = addMinutes(lastFeed.timestamp, intervalMin);
+
+  // If predicted time is in the past, advance by data-driven slot intervals until future.
+  while (predictedTime < now) {
+    const slot = getSlotForHour(predictedTime.getHours(), baby);
+    const slotIntervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
+    predictedTime = addMinutes(predictedTime, Math.round(slotIntervalH * 60));
+  }
+
   const confidenceMinutes = Math.round(intervalH * 20);
   const p10Time = addMinutes(predictedTime, -confidenceMinutes);
   const p90Time = addMinutes(predictedTime, confidenceMinutes);
@@ -121,9 +126,10 @@ export function predictNextFeed(
   };
 
   // --- VOLUME PREDICTION ---
-  const volumeSlot = getSlotForHour(predictedTime.getHours(), baby);
-  let predictedMl = volumeSlot.meanMl;
-  const stdMl = volumeSlot.stdMl;
+  const volumeSlotId = getSlotId(predictedTime.getHours());
+  const vol = computeSlotVolume(volumeSlotId, baby, allFeeds, now);
+  let predictedMl = vol.meanMl;
+  const stdMl = vol.stdMl;
 
   // Apply pattern modifiers on volume
   for (const pattern of patterns) {
@@ -132,10 +138,35 @@ export function predictNextFeed(
     }
   }
 
-  // Compensation: if last feed was small, predict slightly more
+  // Apply profile-specific volume adjustments
+  const adjV = profile.predictionAdjustments.volume;
+  if (volumeSlotId === 'evening' && adjV.evening_boost) {
+    predictedMl *= adjV.evening_boost;
+    explanations.push({
+      ruleId: 'VOLUME_EVENING',
+      text: 'Créneau soir — volumes plus élevés',
+      impact: `+${Math.round((adjV.evening_boost - 1) * 100)}% volume`,
+    });
+  }
+  if (volumeSlotId === 'night' && adjV.night_reduction) {
+    predictedMl *= adjV.night_reduction;
+    explanations.push({
+      ruleId: 'VOLUME_NIGHT',
+      text: 'Créneau nuit — volumes réduits',
+      impact: `${Math.round((adjV.night_reduction - 1) * 100)}% volume`,
+    });
+  }
+  if (volumeSlotId === 'midday' && adjV.midday_boost) {
+    predictedMl *= adjV.midday_boost;
+  }
+
+  // Compensation: if last feed was small/large, adjust volume
+  // (stacks with COMPENSATION pattern which adjusts timing)
   if (lastFeed.type === 'bottle' && lastFeed.volumeMl > 0) {
-    const lastSlot = getSlotForHour(lastFeed.timestamp.getHours(), baby);
-    const ratio = lastFeed.volumeMl / lastSlot.meanMl;
+    const lastSlotVol = computeSlotVolume(
+      getSlotId(lastFeed.timestamp.getHours()), baby, allFeeds, now,
+    );
+    const ratio = lastFeed.volumeMl / lastSlotVol.meanMl;
     if (ratio < 0.7) {
       predictedMl *= 1.10;
       explanations.push({
@@ -172,16 +203,120 @@ export function predictNextFeed(
   };
 }
 
-function predictFromProfile(baby: BabyName, now: Date): Prediction {
-  const profile = PROFILES[baby];
-  const currentSlot = getSlotForHour(now.getHours(), baby);
-  const intervalH = currentSlot.typicalIntervalAfterH;
-  const intervalMin = Math.round(intervalH * 60);
+const SLOT_LABELS: Record<string, string> = {
+  morning: 'Matin',
+  midday: 'Mi-journée',
+  afternoon: 'Après-midi',
+  evening: 'Soirée',
+  night: 'Nuit',
+};
 
-  const predictedTime = addMinutes(now, intervalMin);
-  const confidenceMinutes = Math.round(intervalH * 30); // wider confidence without data
+/**
+ * Compute the weighted median interval for a specific time slot,
+ * using real historical data with recency weighting.
+ * Falls back to the slot's hardcoded interval if not enough data.
+ */
+export function computeSlotInterval(
+  slotId: string,
+  baby: BabyName,
+  allFeeds: FeedRecord[],
+  now: Date,
+): number {
+  const profile = PROFILES[baby];
+  const slot = profile.slots.find((s) => s.id === slotId) ?? profile.slots[0];
+  const babyFeeds = allFeeds
+    .filter((f) => f.baby === baby)
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+  if (babyFeeds.length < 2) return slot.typicalIntervalAfterH;
+
+  // Collect intervals where the feed fell in this slot
+  const intervals: number[] = [];
+  const weights: number[] = [];
+  for (let i = 1; i < babyFeeds.length; i++) {
+    const prevHour = babyFeeds[i - 1].timestamp.getHours();
+    const prevSlot = profile.slots.find((s) => s.hours.includes(prevHour));
+    if (!prevSlot || prevSlot.id !== slotId) continue;
+
+    const diffH = (babyFeeds[i].timestamp.getTime() - babyFeeds[i - 1].timestamp.getTime()) / 3_600_000;
+    if (diffH > INTERVAL_FILTER.minH && diffH < INTERVAL_FILTER.maxH) {
+      intervals.push(diffH);
+      const midpoint = new Date((babyFeeds[i - 1].timestamp.getTime() + babyFeeds[i].timestamp.getTime()) / 2);
+      weights.push(recencyWeight(midpoint, now));
+    }
+  }
+
+  if (intervals.length < 3) return slot.typicalIntervalAfterH;
+  return weightedMedian(intervals, weights);
+}
+
+/**
+ * Compute the weighted mean volume for a specific time slot.
+ */
+export function computeSlotVolume(
+  slotId: string,
+  baby: BabyName,
+  allFeeds: FeedRecord[],
+  now: Date,
+): { meanMl: number; stdMl: number } {
+  const profile = PROFILES[baby];
+  const slot = profile.slots.find((s) => s.id === slotId) ?? profile.slots[0];
+  const babyFeeds = allFeeds.filter(
+    (f) => f.baby === baby && f.type === 'bottle' && f.volumeMl > 0,
+  );
+
+  const volumes: number[] = [];
+  const weights: number[] = [];
+  for (const feed of babyFeeds) {
+    const hour = feed.timestamp.getHours();
+    const feedSlot = profile.slots.find((s) => s.hours.includes(hour));
+    if (!feedSlot || feedSlot.id !== slotId) continue;
+    volumes.push(feed.volumeMl);
+    weights.push(recencyWeight(feed.timestamp, now));
+  }
+
+  if (volumes.length < 3) return { meanMl: slot.meanMl, stdMl: slot.stdMl };
+
+  const mean = weightedMedian(volumes, weights);
+  // Approximate std from data
+  const diffs = volumes.map((v) => (v - mean) ** 2);
+  const std = Math.sqrt(diffs.reduce((s, d) => s + d, 0) / diffs.length);
+  return { meanMl: Math.round(mean), stdMl: Math.round(std) };
+}
+
+/**
+ * Generate a prediction based on historical data patterns (weighted by recency).
+ * Used when there's no fresh feed to anchor on.
+ * Walks from the current slot forward using data-driven intervals.
+ */
+function predictFromProfile(
+  baby: BabyName,
+  allFeeds: FeedRecord[],
+  now: Date,
+): Prediction {
+  const profile = PROFILES[baby];
+
+  const currentHour = now.getHours();
+  const currentSlot = getSlotForHour(currentHour, baby);
+
+  // Anchor on the start of the current slot
+  const slotStartHour = currentSlot.hours[0];
+  const anchorTime = new Date(now);
+  anchorTime.setHours(slotStartHour, 0, 0, 0);
+
+  // Step forward using data-driven intervals until we're past now
+  let predictedTime = anchorTime;
+  while (predictedTime <= now) {
+    const slot = getSlotForHour(predictedTime.getHours(), baby);
+    const intervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
+    predictedTime = addMinutes(predictedTime, Math.round(intervalH * 60));
+  }
 
   const nextSlot = getSlotForHour(predictedTime.getHours(), baby);
+  const nextIntervalH = computeSlotInterval(nextSlot.id, baby, allFeeds, now);
+  const vol = computeSlotVolume(nextSlot.id, baby, allFeeds, now);
+  const confidenceMinutes = Math.round(nextIntervalH * 20);
+  const slotLabel = SLOT_LABELS[nextSlot.id] ?? nextSlot.id;
 
   return {
     baby,
@@ -192,20 +327,68 @@ function predictFromProfile(baby: BabyName, now: Date): Prediction {
       p90Time: addMinutes(predictedTime, confidenceMinutes),
     },
     volume: {
-      predictedMl: nextSlot.meanMl,
-      confidenceMl: Math.round(nextSlot.stdMl),
-      p10Ml: Math.max(30, nextSlot.meanMl - nextSlot.stdMl),
-      p90Ml: nextSlot.meanMl + nextSlot.stdMl,
+      predictedMl: vol.meanMl,
+      confidenceMl: Math.round(vol.stdMl * 0.8),
+      p10Ml: Math.max(30, vol.meanMl - vol.stdMl),
+      p90Ml: vol.meanMl + vol.stdMl,
     },
     explanations: [
       {
-        ruleId: 'PROFILE_DEFAULT',
-        text: `Basé sur le profil historique de ${profile.name}`,
-        impact: 'estimation',
+        ruleId: 'PROFILE_SLOT',
+        text: `Créneau ${slotLabel.toLowerCase()} — intervalle moyen ${nextIntervalH.toFixed(1)}h`,
+        impact: `~${vol.meanMl}ml`,
+      },
+      {
+        ruleId: 'PROFILE_RECENCY',
+        text: 'Pondéré vers les 30 derniers jours',
+        impact: `${profile.stats.typicalRangeMl[0]}–${profile.stats.typicalRangeMl[1]}ml`,
       },
     ],
-    confidence: 'low',
+    confidence: allFeeds.filter((f) => f.baby === baby).length >= 50 ? 'medium' : 'low',
     slot: getSlotId(predictedTime.getHours()),
     generatedAt: now,
+    profileBased: true,
   };
+}
+
+/**
+ * Generate a full day schedule (morning to night) using data-driven intervals.
+ * Exported for use by the Timeline component.
+ */
+export interface DayProjection {
+  time: Date;
+  volumeMl: number;
+}
+
+export function projectDayFromData(
+  baby: BabyName,
+  allFeeds: FeedRecord[],
+  now: Date,
+): DayProjection[] {
+  const profile = PROFILES[baby];
+  const projected: DayProjection[] = [];
+
+  const morningSlot = profile.slots.find((s) => s.id === 'morning') ?? profile.slots[0];
+  const anchor = new Date(now);
+  anchor.setHours(morningSlot.hours[0], 0, 0, 0);
+
+  let current = anchor;
+  const firstSlot = profile.slots.find((s) => s.hours.includes(current.getHours())) ?? profile.slots[0];
+  const firstVol = computeSlotVolume(firstSlot.id, baby, allFeeds, now);
+  projected.push({ time: current, volumeMl: firstVol.meanMl });
+
+  for (let i = 0; i < 10; i++) {
+    const slot = profile.slots.find((s) => s.hours.includes(current.getHours())) ?? profile.slots[0];
+    const intervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
+    const next = new Date(current.getTime() + intervalH * 3_600_000);
+
+    if (next.getDate() !== now.getDate() || next.getHours() >= 23) break;
+
+    const nextSlot = profile.slots.find((s) => s.hours.includes(next.getHours())) ?? profile.slots[0];
+    const nextVol = computeSlotVolume(nextSlot.id, baby, allFeeds, now);
+    projected.push({ time: next, volumeMl: nextVol.meanMl });
+    current = next;
+  }
+
+  return projected;
 }

@@ -3,7 +3,6 @@ import { fr } from 'date-fns/locale';
 import { RefreshCw, BarChart3, RotateCcw, Upload } from 'lucide-react';
 import { useStore } from '../../store';
 import { usePredictions } from '../../hooks/usePredictions';
-import { analyzeSleep } from '../../engine/sleep';
 import { generateRecommendations } from '../../data/recommendations';
 import { BabyCard } from '../BabyCard/BabyCard';
 import { Timeline } from '../Timeline/Timeline';
@@ -21,6 +20,7 @@ export function DashboardScreen() {
     syncStatus,
     alerts,
     patterns,
+    sleepAnalyses,
     feeds,
     sleeps,
     lastUpdated,
@@ -33,12 +33,6 @@ export function DashboardScreen() {
   const feedSleepInsights = useStore((s) => s.feedSleepInsights);
 
   const now = new Date();
-
-  // Sleep analyses
-  const sleepAnalyses = {
-    colette: analyzeSleep('colette', sleeps, feeds, now),
-    isaure: analyzeSleep('isaure', sleeps, feeds, now),
-  };
 
   // Recommendations
   const recommendations = generateRecommendations(feeds, patterns, predictions, syncStatus);
@@ -83,9 +77,11 @@ export function DashboardScreen() {
       </header>
 
       <main className="max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4 pb-8">
+        {/* Timeline */}
+        <Timeline predictions={predictions} feeds={feeds} sleeps={sleeps} sleepAnalyses={sleepAnalyses} />
+
         {/* Quick log */}
         <QuickLog />
-        <SleepLog />
 
         {/* Alerts */}
         <AlertsList alerts={alerts} onDismiss={dismissAlert} />
@@ -97,13 +93,11 @@ export function DashboardScreen() {
           ))}
         </div>
 
-        {/* Timeline */}
-        <Timeline predictions={predictions} />
-
         {/* Twins sync */}
         <TwinsSync syncStatus={syncStatus} />
 
-        {/* Sleep panel */}
+        {/* Sleep log + panel */}
+        <SleepLog />
         <SleepPanel analyses={sleepAnalyses} feedSleepInsights={feedSleepInsights} hour={now.getHours()} />
 
         {/* Recommendations */}

@@ -10,7 +10,7 @@ export function ImportScreen() {
   const [coletteName, setColetteName] = useState('');
   const [isaureName, setIsaureName] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const loadData = useStore((s) => s.loadData);
+  const addFeeds = useStore((s) => s.addFeeds);
   const setScreen = useStore((s) => s.setScreen);
 
   const handleFile = useCallback(
@@ -49,11 +49,12 @@ export function ImportScreen() {
         return;
       }
 
-      loadData(allFeeds, allSleeps);
+      addFeeds(allFeeds, allSleeps);
+      setScreen('dashboard');
     } catch {
       setError('Erreur lors du parsing des fichiers CSV. Vérifiez le format.');
     }
-  }, [coletteFile, isaureFile, loadData]);
+  }, [coletteFile, isaureFile, addFeeds, setScreen]);
 
   const hasFiles = coletteFile || isaureFile;
 
@@ -62,7 +63,7 @@ export function ImportScreen() {
       <div className="max-w-lg w-full space-y-6">
         <div className="text-center">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">TwinFeed Forecast</h1>
-          <p className="text-gray-500 mt-2">Importez les données de suivi pour commencer</p>
+          <p className="text-gray-500 mt-2">Importez des données supplémentaires de suivi</p>
         </div>
 
         <div className="space-y-4">

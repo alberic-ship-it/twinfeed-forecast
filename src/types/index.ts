@@ -13,7 +13,6 @@ export type AlertSeverity = 'info' | 'warning';
 export type AlertType =
   | 'SMALL_FEED'
   | 'VERY_SMALL_FEED'
-  | 'LONG_INTERVAL'
   | 'TWINS_DESYNC'
   | 'GROWTH_SPURT'
   | 'APPETITE_DROP';
@@ -133,6 +132,8 @@ export interface Prediction {
   confidence: 'high' | 'medium' | 'low';
   slot: TimeSlotId;
   generatedAt: Date;
+  /** True when prediction is based on profile defaults (no fresh data today) */
+  profileBased?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

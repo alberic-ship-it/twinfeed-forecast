@@ -53,12 +53,13 @@ export function detectPatterns(
   }
 
   // --- EVENING EFFECT ---
+  // Aligned with evening slot definition in knowledge.ts (hours 18-21)
   const hour = now.getHours();
-  if (hour >= 17 && hour < 22) {
+  if (hour >= 18 && hour < 22) {
     patterns.push({
       id: 'EVENING',
       label: 'Effet soirée',
-      description: 'Créneau 17h-22h — intervalles plus courts, volumes plus importants',
+      description: 'Créneau soirée (18h-21h) — intervalles plus courts, volumes plus importants',
       baby,
       detectedAt: now,
       timingModifier: 0.85,

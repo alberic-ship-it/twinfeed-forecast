@@ -83,6 +83,7 @@ export const BEST_SYNC_WINDOWS = [
 ];
 
 // Wake windows pour bébés 4-6 mois (en minutes)
+// Reference data — used by sleep.ts nap prediction fallback logic
 export const WAKE_WINDOWS = {
   optimalMin: 90,
   optimalMax: 150,
@@ -317,24 +318,38 @@ export const BABY_FACTS_6M: BabyFact[] = [
   },
 ];
 
+/**
+ * Pick 2 facts for the current hour.
+ * Uses day-of-year as offset so every hour in the same day gets
+ * a unique pair, and different days rotate through different facts.
+ */
 export function getHourlyFacts(hour: number): BabyFact[] {
-  // Filter facts relevant to this hour
-  const relevant = BABY_FACTS_6M.filter((f) => f.hours.includes(hour));
+  const now = new Date();
+  const dayOfYear = Math.floor(
+    (now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000,
+  );
+  const pool = BABY_FACTS_6M;
+  const n = pool.length;
 
-  // If not enough relevant facts, include all
-  const pool = relevant.length >= 2 ? relevant : BABY_FACTS_6M;
+  // Deterministic shuffle seed based on day — each day gets a different ordering
+  const daySeed = dayOfYear * 31;
 
-  // Use hour to deterministically pick 2 facts, rotating through the pool
-  const idx1 = hour % pool.length;
-  let idx2 = (hour * 7 + 3) % pool.length;
-  if (idx2 === idx1) idx2 = (idx2 + 1) % pool.length;
+  // Pick index for this hour, guaranteed unique across hours in the same day
+  const idx1 = (daySeed + hour * 3 + 1) % n;
+  let idx2 = (daySeed + hour * 3 + 2) % n;
+  if (idx2 === idx1) idx2 = (idx2 + 1) % n;
 
   // Ensure different categories when possible
   const fact1 = pool[idx1];
   let fact2 = pool[idx2];
-  if (fact1.category === fact2.category && pool.length > 2) {
-    const other = pool.find((f, i) => i !== idx1 && f.category !== fact1.category);
-    if (other) fact2 = other;
+  if (fact1.category === fact2.category && n > 2) {
+    for (let i = 1; i < n; i++) {
+      const candidate = pool[(idx2 + i) % n];
+      if (candidate.category !== fact1.category && candidate.id !== fact1.id) {
+        fact2 = candidate;
+        break;
+      }
+    }
   }
 
   return [fact1, fact2];

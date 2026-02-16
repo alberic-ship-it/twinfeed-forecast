@@ -1,6 +1,8 @@
 import { ArrowLeft } from 'lucide-react';
 import { useStore } from '../../store';
 import { PROFILES, BABY_COLORS } from '../../data/knowledge';
+import { INTERVAL_FILTER, computeSlotVolume } from '../../engine/predictor';
+import { recencyWeight, weightedMedian } from '../../engine/recency';
 import type { BabyName, FeedRecord } from '../../types';
 
 export function InsightsScreen() {
@@ -32,10 +34,14 @@ export function InsightsScreen() {
           const bottleFeeds = babyFeeds.filter((f) => f.type === 'bottle' && f.volumeMl > 0);
           const breastFeeds = babyFeeds.filter((f) => f.type === 'breast');
 
+          const now = new Date();
           const avgVolume =
             bottleFeeds.length > 0
               ? Math.round(
-                  bottleFeeds.reduce((s, f) => s + f.volumeMl, 0) / bottleFeeds.length,
+                  weightedMedian(
+                    bottleFeeds.map((f) => f.volumeMl),
+                    bottleFeeds.map((f) => recencyWeight(f.timestamp, now)),
+                  ),
                 )
               : 0;
 
@@ -63,15 +69,8 @@ export function InsightsScreen() {
                 </p>
                 <div className="space-y-1">
                   {profile.slots.map((slot) => {
-                    const slotFeeds = bottleFeeds.filter((f) =>
-                      slot.hours.includes(f.timestamp.getHours()),
-                    );
-                    const slotAvg =
-                      slotFeeds.length > 0
-                        ? Math.round(
-                            slotFeeds.reduce((s, f) => s + f.volumeMl, 0) / slotFeeds.length,
-                          )
-                        : slot.meanMl;
+                    const slotVol = computeSlotVolume(slot.id, baby, feeds, now);
+                    const slotAvg = slotVol.meanMl;
                     const slotLabel =
                       slot.id === 'morning'
                         ? 'Matin'
@@ -142,14 +141,16 @@ function Stat({ label, value }: { label: string; value: string }) {
 function computeAvgInterval(feeds: FeedRecord[]): string {
   if (feeds.length < 2) return '—';
   const sorted = [...feeds].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-  let totalH = 0;
-  let count = 0;
+  const now = new Date();
+  const intervals: number[] = [];
+  const weights: number[] = [];
   for (let i = 1; i < sorted.length; i++) {
     const diffH = (sorted[i].timestamp.getTime() - sorted[i - 1].timestamp.getTime()) / (1000 * 60 * 60);
-    if (diffH > 0.5 && diffH < 12) {
-      totalH += diffH;
-      count++;
+    if (diffH > INTERVAL_FILTER.minH && diffH < INTERVAL_FILTER.maxH) {
+      intervals.push(diffH);
+      const midpoint = new Date((sorted[i - 1].timestamp.getTime() + sorted[i].timestamp.getTime()) / 2);
+      weights.push(recencyWeight(midpoint, now));
     }
   }
-  return count > 0 ? (totalH / count).toFixed(1) : '—';
+  return intervals.length > 0 ? weightedMedian(intervals, weights).toFixed(1) : '—';
 }
