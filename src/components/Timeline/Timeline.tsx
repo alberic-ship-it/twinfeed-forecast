@@ -50,52 +50,40 @@ function projectFeedsForDay(
 ): ProjectedFeed[] {
   const profile = PROFILES[baby];
 
-  // --- Profile-based mode: past context + future anchored on actual prediction ---
-  // Past projections from projectDayFromData for context, future starts from
-  // pred.timing.predictedTime to stay consistent with BabyCard "prochain repas".
-  if (pred.profileBased) {
+  // Check if there are manual feeds today (not just seed/historical data)
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const hasTodayFeeds = allFeeds.some(
+    (f) => f.baby === baby && f.timestamp >= todayStart && f.timestamp <= now,
+  );
+
+  // Past context: show day projections before now (faded) only when
+  // there are no manual entries today — avoids visual noise with real dots.
+  const pastProjections: ProjectedFeed[] = [];
+  if (!hasTodayFeeds) {
     const dayProjections = projectDayFromData(baby, allFeeds, now);
-    const pastProjections = dayProjections.filter((p) => p.time < now);
-
-    // Future: anchor on the actual prediction, then chain forward
-    const futureProjections: ProjectedFeed[] = [];
-    let current = pred.timing.predictedTime;
-    if (isToday(current, now)) {
-      futureProjections.push({ time: current, volumeMl: pred.volume.predictedMl });
-      for (let i = 0; i < 10; i++) {
-        const slot = profile.slots.find((s) => s.hours.includes(current.getHours())) ?? profile.slots[0];
-        const intervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
-        const next = new Date(current.getTime() + intervalH * 3_600_000);
-        if (!isToday(next, now) || next.getHours() >= 23) break;
-        const nextSlot = profile.slots.find((s) => s.hours.includes(next.getHours())) ?? profile.slots[0];
-        const nextVol = computeSlotVolume(nextSlot.id, baby, allFeeds, now);
-        futureProjections.push({ time: next, volumeMl: nextVol.meanMl });
-        current = next;
-      }
-    }
-    return [...pastProjections, ...futureProjections];
+    pastProjections.push(...dayProjections.filter((p) => p.time < now));
   }
 
-  // --- With manual entries: forward projections from the prediction ---
-  // Uses data-driven intervals/volumes (same engine as predictor)
-  const projected: ProjectedFeed[] = [];
+  // Future: anchor on the actual prediction, then chain forward
+  // (consistent with BabyCard "prochain repas")
+  const futureProjections: ProjectedFeed[] = [];
   let current = pred.timing.predictedTime;
-  if (!isToday(current, now)) return [];
-
-  projected.push({ time: current, volumeMl: pred.volume.predictedMl });
-
-  for (let i = 0; i < 10; i++) {
-    const slot = profile.slots.find((s) => s.hours.includes(current.getHours())) ?? profile.slots[0];
-    const intervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
-    const next = new Date(current.getTime() + intervalH * 3_600_000);
-    if (!isToday(next, now) || next.getHours() >= 23) break;
-    const nextSlot = profile.slots.find((s) => s.hours.includes(next.getHours())) ?? profile.slots[0];
-    const nextVol = computeSlotVolume(nextSlot.id, baby, allFeeds, now);
-    projected.push({ time: next, volumeMl: nextVol.meanMl });
-    current = next;
+  if (isToday(current, now)) {
+    futureProjections.push({ time: current, volumeMl: pred.volume.predictedMl });
+    for (let i = 0; i < 10; i++) {
+      const slot = profile.slots.find((s) => s.hours.includes(current.getHours())) ?? profile.slots[0];
+      const intervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
+      const next = new Date(current.getTime() + intervalH * 3_600_000);
+      if (!isToday(next, now) || next.getHours() >= 23) break;
+      const nextSlot = profile.slots.find((s) => s.hours.includes(next.getHours())) ?? profile.slots[0];
+      const nextVol = computeSlotVolume(nextSlot.id, baby, allFeeds, now);
+      futureProjections.push({ time: next, volumeMl: nextVol.meanMl });
+      current = next;
+    }
   }
 
-  return projected;
+  return [...pastProjections, ...futureProjections];
 }
 
 interface ProjectedNap {
@@ -104,28 +92,23 @@ interface ProjectedNap {
 }
 
 /**
- * Project naps for the day — mirrors the feed projection logic:
- *
- * - Profile-based (no manual entries): full day from default nap windows,
- *   past ones faded as context.
- * - With manual entries: forward projections from the sleep analysis,
- *   chaining from the next predicted nap using data-driven inter-nap intervals.
+ * Project naps for the day:
+ * - Without manual sleeps today: past default nap windows (faded) + future projections.
+ * - With manual sleeps today: future projections only (real blocks provide context).
  */
 function projectNapsForDay(
   baby: BabyName,
   sleepAn: SleepAnalysis,
   now: Date,
-  profileBased: boolean,
+  hasTodaySleeps: boolean,
 ): ProjectedNap[] {
   const defaults = DEFAULT_SLEEP[baby];
   const napDuration = sleepAn.avgNapDurationMin;
 
-  // Both modes use sleepAn.nextNap for the first future nap (consistent with SleepPanel).
-  // Profile mode adds past default windows for context; manual mode only shows future.
-
-  // Past nap windows (profile mode only — provides day context)
+  // Past nap windows — only when no manual sleeps today (avoids noise
+  // with real sleep blocks already displayed)
   const pastNaps: ProjectedNap[] = [];
-  if (profileBased) {
+  if (!hasTodaySleeps) {
     for (const t of defaults.bestNapTimes) {
       const napTime = new Date(now);
       napTime.setHours(Math.floor(t.startH), (t.startH % 1) * 60, 0, 0);
@@ -206,7 +189,10 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
           const projectedFeeds = pred
             ? projectFeedsForDay(baby, pred, now, feeds)
             : [];
-          const projectedNaps = projectNapsForDay(baby, sleepAn, now, !!pred?.profileBased);
+          const hasTodaySleeps = sleeps.some(
+            (s) => s.baby === baby && isToday(s.startTime, now),
+          );
+          const projectedNaps = projectNapsForDay(baby, sleepAn, now, hasTodaySleeps);
 
           // Next prediction text (for when projected feeds are empty = prediction is tomorrow)
           let nextPredText: string | null = null;
