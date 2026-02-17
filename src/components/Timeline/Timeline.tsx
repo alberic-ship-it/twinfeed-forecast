@@ -47,7 +47,7 @@ function projectFeedsForDay(
   );
 
   const tooCloseToReal = (time: Date) =>
-    todayFeeds.some((f) => Math.abs(f.timestamp.getTime() - time.getTime()) < 45 * 60_000);
+    todayFeeds.some((f) => Math.abs(f.timestamp.getTime() - time.getTime()) < 90 * 60_000);
 
   const dayProjections = projectDayFromData(baby, allFeeds, now);
   const pastProjections = dayProjections
@@ -92,7 +92,7 @@ function projectNapsForDay(
         ? s.endTime.getTime()
         : realStart + s.durationMin * 60_000;
       // Overlap check: projections and real sleep overlap if they don't NOT overlap
-      return projStart < realEnd + 30 * 60_000 && projEnd > realStart - 30 * 60_000;
+      return projStart < realEnd + 90 * 60_000 && projEnd > realStart - 90 * 60_000;
     });
   };
 
