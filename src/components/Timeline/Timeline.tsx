@@ -1,4 +1,4 @@
-import { format } from 'date-fns';
+import { format, differenceInMinutes } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { BabyName, Prediction, FeedRecord, SleepRecord } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
@@ -93,6 +93,7 @@ function projectFeedsForDay(
 interface ProjectedNap {
   time: Date;
   durationMin: number;
+  isNight?: boolean;
 }
 
 /**
@@ -105,6 +106,7 @@ function projectNapsForDay(
   sleepAn: SleepAnalysis,
   now: Date,
   todaySleeps: SleepRecord[],
+  allSleeps: SleepRecord[],
 ): ProjectedNap[] {
   const defaults = DEFAULT_SLEEP[baby];
   const napDuration = sleepAn.avgNapDurationMin;
@@ -129,23 +131,74 @@ function projectNapsForDay(
   // Future nap projections — anchored on sleep analysis (same as SleepPanel)
   const naps: ProjectedNap[] = [...pastNaps];
 
-  if (!sleepAn.nextNap) return naps;
+  if (sleepAn.nextNap) {
+    // First projected nap from the sleep engine (matches SleepPanel "Prochaine sieste")
+    let current = sleepAn.nextNap.predictedTime;
+    naps.push({ time: current, durationMin: sleepAn.nextNap.estimatedDurationMin });
 
-  // First projected nap from the sleep engine (matches SleepPanel "Prochaine sieste")
-  let current = sleepAn.nextNap.predictedTime;
-  naps.push({ time: current, durationMin: sleepAn.nextNap.estimatedDurationMin });
-
-  // Chain forward using median inter-nap interval (like feeds chain with slot intervals)
-  const interNapMin = sleepAn.medianInterNapMin;
-  if (interNapMin) {
-    const maxNaps = defaults.napsPerDay;
-    for (let i = sleepAn.napsToday + 1; i < maxNaps; i++) {
-      const napEnd = new Date(current.getTime() + napDuration * 60_000);
-      const next = new Date(napEnd.getTime() + interNapMin * 60_000);
-      if (next.getHours() >= 21 || !isToday(next, now)) break;
-      naps.push({ time: next, durationMin: napDuration });
-      current = next;
+    // Chain forward using median inter-nap interval (like feeds chain with slot intervals)
+    const interNapMin = sleepAn.medianInterNapMin;
+    if (interNapMin) {
+      const maxNaps = defaults.napsPerDay;
+      for (let i = sleepAn.napsToday + 1; i < maxNaps; i++) {
+        const napEnd = new Date(current.getTime() + napDuration * 60_000);
+        const next = new Date(napEnd.getTime() + interNapMin * 60_000);
+        if (next.getHours() >= 21 || !isToday(next, now)) break;
+        naps.push({ time: next, durationMin: napDuration });
+        current = next;
+      }
     }
+  }
+
+  // ── Night sleep blocks ──
+
+  // Last night: find the most recent night sleep that ended this morning
+  // (started yesterday evening, ended today before noon)
+  const todayMidnight = new Date(now);
+  todayMidnight.setHours(0, 0, 0, 0);
+  const todayNoon = new Date(now);
+  todayNoon.setHours(12, 0, 0, 0);
+
+  const lastNightSleep = [...allSleeps]
+    .filter(
+      (s) =>
+        s.baby === baby &&
+        s.startTime < todayMidnight &&
+        s.endTime &&
+        s.endTime > todayMidnight &&
+        s.endTime < todayNoon,
+    )
+    .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())[0];
+
+  if (lastNightSleep?.endTime) {
+    // Show from midnight to wake time
+    const wakeMin = differenceInMinutes(lastNightSleep.endTime, todayMidnight);
+    if (wakeMin > 0) {
+      naps.push({
+        time: todayMidnight,
+        durationMin: wakeMin,
+        isNight: true,
+      });
+    }
+  } else {
+    // No real data — project last night from default wake hour
+    const wakeMin = defaults.typicalWakeHour * 60;
+    naps.push({
+      time: todayMidnight,
+      durationMin: wakeMin,
+      isNight: true,
+    });
+  }
+
+  // Tonight: bedtime → end of day (midnight)
+  if (sleepAn.bedtime) {
+    const bedtime = sleepAn.bedtime.predictedTime;
+    const minutesToMidnight = (24 * 60) - (bedtime.getHours() * 60 + bedtime.getMinutes());
+    naps.push({
+      time: bedtime,
+      durationMin: minutesToMidnight,
+      isNight: true,
+    });
   }
 
   return naps;
@@ -196,7 +249,7 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
           const projectedFeeds = pred
             ? projectFeedsForDay(baby, pred, now, feeds)
             : [];
-          const projectedNaps = projectNapsForDay(baby, sleepAn, now, babySleeps);
+          const projectedNaps = projectNapsForDay(baby, sleepAn, now, babySleeps, sleeps);
 
           // Next prediction text (for when projected feeds are empty = prediction is tomorrow)
           let nextPredText: string | null = null;
@@ -286,25 +339,44 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
                     );
                   })}
 
-                  {/* Projected naps (dashed blocks — past ones faded) */}
+                  {/* Projected naps + bedtime (dashed blocks — past ones faded) */}
                   {projectedNaps.map((pn, i) => {
                     const napLeft = hourToPercent(pn.time);
                     const napWidth = Math.max(2, (pn.durationMin / (TOTAL_H * 60)) * 100);
                     const napEnd = new Date(pn.time.getTime() + pn.durationMin * 60_000);
                     const isPastNap = napEnd < now;
                     return (
-                      <div
-                        key={`pn-${i}`}
-                        className="absolute top-1 h-2.5 rounded-sm border-2 border-dashed z-10"
-                        style={{
-                          left: `${napLeft}%`,
-                          width: `${napWidth}%`,
-                          borderColor: color,
-                          backgroundColor: color,
-                          opacity: isPastNap ? 0.15 : 0.35,
-                        }}
-                        title={`${isPastNap ? 'Sieste projetée' : 'Sieste prévue'} ${format(pn.time, 'HH:mm')} ~${pn.durationMin}min`}
-                      />
+                      <div key={`pn-${i}`}>
+                        <div
+                          className={`absolute top-1 h-2.5 rounded-sm border-2 z-10 ${
+                            pn.isNight ? 'border-solid' : 'border-dashed'
+                          }`}
+                          style={{
+                            left: `${napLeft}%`,
+                            width: `${napWidth}%`,
+                            borderColor: pn.isNight ? '#6366F1' : color,
+                            backgroundColor: pn.isNight ? '#6366F1' : color,
+                            opacity: isPastNap ? 0.15 : pn.isNight ? 0.5 : 0.35,
+                          }}
+                          title={
+                            pn.isNight
+                              ? `Dodo prévu ${format(pn.time, 'HH:mm')}`
+                              : `${isPastNap ? 'Sieste projetée' : 'Sieste prévue'} ${format(pn.time, 'HH:mm')} ~${pn.durationMin}min`
+                          }
+                        />
+                        {pn.isNight && (
+                          <span
+                            className="absolute top-0 text-[8px] font-medium z-20 -translate-x-1/2 whitespace-nowrap"
+                            style={{
+                              left: `${napLeft}%`,
+                              color: '#6366F1',
+                              opacity: 0.8,
+                            }}
+                          >
+                            {format(pn.time, 'HH:mm')}
+                          </span>
+                        )}
+                      </div>
                     );
                   })}
 
@@ -330,7 +402,7 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-3 mt-2 ml-6">
+      <div className="flex items-center gap-3 mt-2 ml-6 flex-wrap">
         <div className="flex items-center gap-1">
           <div className="w-2 h-2 rounded-full bg-gray-400" />
           <span className="text-[10px] text-gray-400">repas</span>
@@ -342,6 +414,10 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
         <div className="flex items-center gap-1">
           <div className="w-2 h-2 rounded-full border-2 border-gray-400 bg-white" />
           <span className="text-[10px] text-gray-400">prévu</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-2 rounded-sm bg-indigo-400 opacity-50" />
+          <span className="text-[10px] text-gray-400">nuit</span>
         </div>
         <div className="flex items-center gap-1">
           <div className="w-3 h-2 rounded-sm border border-dashed border-gray-400 bg-gray-200" />

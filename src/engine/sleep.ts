@@ -218,13 +218,38 @@ export function analyzeSleep(
       ? Math.round(weightedAvg(nightDurations, nightWeights))
       : defaults.nightDurationMin;
 
-  const bedtimeDate = new Date(now);
+  let bedtimeDate = new Date(now);
   bedtimeDate.setHours(
     Math.floor(medianBedtimeMin / 60),
     Math.round(medianBedtimeMin % 60),
     0,
     0,
   );
+
+  // Adjust bedtime based on today's context:
+  // 1. If baby slept much less than usual today → earlier bedtime
+  // 2. Last wake-up + max wake window gives an upper bound
+  const expectedDaySleepMin = defaults.napsPerDay * avgNapDuration;
+  const sleepDeficitMin = expectedDaySleepMin - totalSleepToday;
+
+  if (sleepDeficitMin > 30 && totalSleepToday > 0) {
+    // Pull bedtime earlier: ~15 min per 30 min deficit, capped at 60 min
+    const pullMin = Math.min(60, Math.round(sleepDeficitMin * 0.5));
+    bedtimeDate = new Date(bedtimeDate.getTime() - pullMin * 60_000);
+  }
+
+  // Wake-window cap: bedtime no later than last wake-up + max wake window
+  const lastNapOrSleep = todayNaps.length > 0
+    ? todayNaps[todayNaps.length - 1]
+    : null;
+  if (lastNapOrSleep?.endTime) {
+    const maxBedtime = new Date(
+      lastNapOrSleep.endTime.getTime() + WAKE_WINDOWS.maxBeforeOvertired * 60_000,
+    );
+    if (maxBedtime < bedtimeDate && maxBedtime > now) {
+      bedtimeDate = maxBedtime;
+    }
+  }
 
   // Only show bedtime if it's still ahead
   if (bedtimeDate > now) {
