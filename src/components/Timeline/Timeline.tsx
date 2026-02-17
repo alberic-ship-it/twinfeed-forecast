@@ -251,6 +251,8 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
             : [];
           const projectedNaps = projectNapsForDay(baby, sleepAn, now, babySleeps, sleeps);
 
+          const nightBlocks = projectedNaps.filter((n) => n.isNight);
+
           // Next prediction text (for when projected feeds are empty = prediction is tomorrow)
           let nextPredText: string | null = null;
           if (pred && projectedFeeds.length === 0) {
@@ -387,6 +389,15 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
                   />
                 </div>
               </div>
+
+              {/* Debug: night blocks info */}
+              {nightBlocks.length > 0 && (
+                <div className="ml-6 mt-0.5">
+                  <span className="text-[10px] text-indigo-400">
+                    {nightBlocks.map((n) => `${format(n.time, 'HH:mm')} ${n.durationMin}min`).join(' | ')}
+                  </span>
+                </div>
+              )}
 
               {/* "Tomorrow" text when no projections fit today */}
               {nextPredText && (
