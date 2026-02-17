@@ -118,10 +118,23 @@ export function analyzeSleep(
       ? Math.round(weightedAvg(napDurations, napDurWeights))
       : defaults.napDurationMin;
 
+  // ── Effective nap count: logged + projected past naps ──
+  // When no naps are logged, count default nap windows that have already passed
+  // as "probable" naps, so predictions stay consistent with the Timeline.
+  let effectiveNapsToday = napsToday;
+  if (napsToday === 0) {
+    const currentH = now.getHours() + now.getMinutes() / 60;
+    for (const window of defaults.bestNapTimes) {
+      if (currentH >= window.endH) {
+        effectiveNapsToday++;
+      }
+    }
+  }
+
   // ── Next nap prediction ──
   let nextNap: SleepPrediction | null = null;
 
-  if (napsToday < defaults.napsPerDay) {
+  if (effectiveNapsToday < defaults.napsPerDay) {
     let predictedTime: Date | null = null;
 
     const lastTodayNap =
@@ -171,9 +184,10 @@ export function analyzeSleep(
     }
 
     // Strategy C: fallback to default nap windows
+    // Use effectiveNapsToday to skip past windows (including projected ones)
     if (!predictedTime) {
       const currentH = now.getHours() + now.getMinutes() / 60;
-      for (let i = napsToday; i < defaults.bestNapTimes.length; i++) {
+      for (let i = effectiveNapsToday; i < defaults.bestNapTimes.length; i++) {
         const window = defaults.bestNapTimes[i];
         if (currentH < window.endH) {
           const midH = (window.startH + window.endH) / 2;
@@ -230,7 +244,7 @@ export function analyzeSleep(
 
   // Adjust bedtime based on today's context:
   // Only adjust if all expected naps are done — otherwise deficit is misleading
-  if (napsToday >= defaults.napsPerDay) {
+  if (effectiveNapsToday >= defaults.napsPerDay) {
     const expectedDaySleepMin = defaults.napsPerDay * avgNapDuration;
     const sleepDeficitMin = expectedDaySleepMin - totalSleepToday;
 
@@ -243,7 +257,7 @@ export function analyzeSleep(
 
   // Wake-window cap: only applies when all expected naps are done for the day.
   // If there are still naps to come, the baby will sleep again before bedtime.
-  if (napsToday >= defaults.napsPerDay) {
+  if (effectiveNapsToday >= defaults.napsPerDay) {
     const lastNapOrSleep = todayNaps.length > 0
       ? todayNaps[todayNaps.length - 1]
       : null;
@@ -276,7 +290,7 @@ export function analyzeSleep(
   return {
     baby,
     totalSleepToday,
-    napsToday,
+    napsToday: effectiveNapsToday,
     nextNap,
     bedtime,
     medianInterNapMin: medianInterNap,
