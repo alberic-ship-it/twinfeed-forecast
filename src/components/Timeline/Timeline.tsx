@@ -356,7 +356,7 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
                             width: `${napWidth}%`,
                             borderColor: pn.isNight ? '#6366F1' : color,
                             backgroundColor: pn.isNight ? '#6366F1' : color,
-                            opacity: isPastNap ? 0.15 : pn.isNight ? 0.5 : 0.35,
+                            opacity: pn.isNight ? (isPastNap ? 0.3 : 0.5) : (isPastNap ? 0.15 : 0.35),
                           }}
                           title={
                             pn.isNight
@@ -364,7 +364,7 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
                               : `${isPastNap ? 'Sieste projetée' : 'Sieste prévue'} ${format(pn.time, 'HH:mm')} ~${pn.durationMin}min`
                           }
                         />
-                        {pn.isNight && (
+                        {pn.isNight && !isPastNap && (
                           <span
                             className="absolute top-0 text-[8px] font-medium z-20 -translate-x-1/2 whitespace-nowrap"
                             style={{
