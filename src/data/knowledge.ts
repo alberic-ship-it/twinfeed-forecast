@@ -340,6 +340,63 @@ export const BABY_FACTS_6M: BabyFact[] = [
     category: 'twins',
     hours: [8, 11, 14, 17, 20],
   },
+  // ── Nouveaux repères ───────────────────────────────────────────────
+  {
+    id: 'fact-biberon-reveil',
+    title: 'Biberon complet au réveil',
+    message: 'Un biberon bien pris au réveil (120-180 ml) aide à caler le rythme de la journée. Si bébé refuse, pas d\'inquiétude — il rattrapera au repas suivant.',
+    category: 'feeding',
+    hours: [6, 7, 8],
+  },
+  {
+    id: 'fact-proteger-sieste-midi',
+    title: 'Protéger la sieste de midi',
+    message: 'La sieste de midi est souvent la plus longue et la plus réparatrice de la journée. Essayez de protéger ce créneau : pénombre, calme, et coucher dès les premiers signes de fatigue.',
+    category: 'sleep',
+    hours: [11, 12, 13],
+  },
+  {
+    id: 'fact-volume-aprem-coucher',
+    title: 'Biberon d\'après-midi & coucher',
+    message: 'Un bon biberon entre 14h et 17h contribue à un meilleur endormissement le soir. Ce n\'est pas le dernier biberon qui compte le plus, mais le total de l\'après-midi.',
+    category: 'feeding',
+    hours: [14, 15, 16],
+  },
+  {
+    id: 'fact-rituel-soir',
+    title: 'Rituel du soir',
+    message: 'Un rituel prévisible (bain, massage, biberon, berceuse) signale au cerveau que la nuit approche. La régularité compte plus que la durée — 15-20 min suffisent.',
+    category: 'sleep',
+    hours: [18, 19, 20],
+  },
+  {
+    id: 'fact-sieste-courte-ok',
+    title: 'Sieste courte = un cycle complet',
+    message: 'Une sieste de 20-30 min correspond à un cycle de sommeil complet chez le nourrisson. C\'est suffisant pour se recharger — pas besoin de forcer à prolonger.',
+    category: 'sleep',
+    hours: [9, 10, 14, 15, 16],
+  },
+  {
+    id: 'fact-surstimulation',
+    title: 'Calme en fin d\'après-midi',
+    message: 'Entre 16h et 18h, réduisez les stimulations (écrans, bruits forts, jeux très actifs). Le calme en fin de journée prépare un meilleur endormissement le soir.',
+    category: 'sleep',
+    hours: [16, 17, 18],
+  },
+  {
+    id: 'fact-reduction-nuit',
+    title: 'Diminuer les biberons de nuit',
+    message: 'Les biberons de nuit diminuent naturellement entre 4 et 8 mois. Réduire progressivement le volume (10-20 ml par semaine) est plus efficace que l\'arrêt brutal.',
+    category: 'feeding',
+    hours: [22, 23, 0, 1, 2, 3],
+  },
+  {
+    id: 'fact-coucher-ideal',
+    title: 'Créneau de coucher idéal',
+    message: 'Entre 19h et 21h, le taux de mélatonine est naturellement élevé chez le nourrisson. Coucher dans ce créneau facilite l\'endormissement et allonge le 1er cycle de nuit.',
+    category: 'sleep',
+    hours: [19, 20, 21],
+  },
 ];
 
 /**
