@@ -103,7 +103,7 @@ export const BEST_SYNC_WINDOWS = [
 // Seuil pour identifier un sommeil de nuit (vs sieste)
 export const NIGHT_SLEEP = {
   minStartHour: 19,
-  minDurationMin: 120,
+  minDurationMin: 300,  // 5h — only count true night sleeps, not long evening naps
 };
 
 // Wake windows pour bébés 4-6 mois (en minutes)

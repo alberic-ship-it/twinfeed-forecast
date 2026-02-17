@@ -19,6 +19,8 @@ export interface SleepAnalysis {
   medianInterNapMin: number | null;
   /** Data-driven average nap duration (minutes) */
   avgNapDurationMin: number;
+  /** Estimated bedtime (always set, even if past — used for timeline display) */
+  estimatedBedtimeDate: Date;
 }
 
 // ── Helpers ──
@@ -227,15 +229,16 @@ export function analyzeSleep(
   );
 
   // Adjust bedtime based on today's context:
-  // 1. If baby slept much less than usual today → earlier bedtime
-  // 2. Last wake-up + max wake window gives an upper bound
-  const expectedDaySleepMin = defaults.napsPerDay * avgNapDuration;
-  const sleepDeficitMin = expectedDaySleepMin - totalSleepToday;
+  // Only adjust if all expected naps are done — otherwise deficit is misleading
+  if (napsToday >= defaults.napsPerDay) {
+    const expectedDaySleepMin = defaults.napsPerDay * avgNapDuration;
+    const sleepDeficitMin = expectedDaySleepMin - totalSleepToday;
 
-  if (sleepDeficitMin > 30 && totalSleepToday > 0) {
-    // Pull bedtime earlier: ~15 min per 30 min deficit, capped at 60 min
-    const pullMin = Math.min(60, Math.round(sleepDeficitMin * 0.5));
-    bedtimeDate = new Date(bedtimeDate.getTime() - pullMin * 60_000);
+    if (sleepDeficitMin > 30) {
+      // Pull bedtime earlier: ~10 min per 30 min deficit, capped at 30 min
+      const pullMin = Math.min(30, Math.round(sleepDeficitMin * 0.33));
+      bedtimeDate = new Date(bedtimeDate.getTime() - pullMin * 60_000);
+    }
   }
 
   // Wake-window cap: only applies when all expected naps are done for the day.
@@ -278,5 +281,6 @@ export function analyzeSleep(
     bedtime,
     medianInterNapMin: medianInterNap,
     avgNapDurationMin: avgNapDuration,
+    estimatedBedtimeDate: bedtimeDate,
   };
 }
