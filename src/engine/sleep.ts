@@ -238,17 +238,27 @@ export function analyzeSleep(
     bedtimeDate = new Date(bedtimeDate.getTime() - pullMin * 60_000);
   }
 
-  // Wake-window cap: bedtime no later than last wake-up + max wake window
-  const lastNapOrSleep = todayNaps.length > 0
-    ? todayNaps[todayNaps.length - 1]
-    : null;
-  if (lastNapOrSleep?.endTime) {
-    const maxBedtime = new Date(
-      lastNapOrSleep.endTime.getTime() + WAKE_WINDOWS.maxBeforeOvertired * 60_000,
-    );
-    if (maxBedtime < bedtimeDate && maxBedtime > now) {
-      bedtimeDate = maxBedtime;
+  // Wake-window cap: only applies when all expected naps are done for the day.
+  // If there are still naps to come, the baby will sleep again before bedtime.
+  if (napsToday >= defaults.napsPerDay) {
+    const lastNapOrSleep = todayNaps.length > 0
+      ? todayNaps[todayNaps.length - 1]
+      : null;
+    if (lastNapOrSleep?.endTime) {
+      const maxBedtime = new Date(
+        lastNapOrSleep.endTime.getTime() + WAKE_WINDOWS.maxBeforeOvertired * 60_000,
+      );
+      if (maxBedtime < bedtimeDate && maxBedtime > now) {
+        bedtimeDate = maxBedtime;
+      }
     }
+  }
+
+  // Sanity floor: bedtime can never be before 18h
+  const floor18h = new Date(now);
+  floor18h.setHours(18, 0, 0, 0);
+  if (bedtimeDate < floor18h) {
+    bedtimeDate = floor18h;
   }
 
   // Only show bedtime if it's still ahead
