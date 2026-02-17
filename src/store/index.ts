@@ -40,7 +40,7 @@ interface Store {
   loadData: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
   addFeeds: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
   logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number) => void;
-  logSleep: (baby: BabyName, durationMin: number) => void;
+  logSleep: (baby: BabyName, durationMin: number, endTime?: Date) => void;
   refreshPredictions: () => void;
   dismissAlert: (id: string) => void;
   reset: () => void;
@@ -134,13 +134,13 @@ export const useStore = create<Store>((set, get) => ({
     pushEntries([feed], []).catch(() => {});
   },
 
-  logSleep: (baby, durationMin) => {
-    const now = new Date();
+  logSleep: (baby, durationMin, endTime?) => {
+    const end = endTime ?? new Date();
     const sleep: SleepRecord = {
       id: crypto.randomUUID(),
       baby,
-      startTime: new Date(now.getTime() - durationMin * 60000),
-      endTime: now,
+      startTime: new Date(end.getTime() - durationMin * 60000),
+      endTime: end,
       durationMin,
     };
     const { sleeps } = get();
@@ -215,20 +215,71 @@ export const useStore = create<Store>((set, get) => ({
 
 // ── Helpers ──
 
+/**
+ * Content key for a feed: deduplicates entries that represent the same
+ * real-world event even when they have different IDs (e.g. deterministic
+ * seed ID vs UUID migrated from localStorage / server).
+ */
+function feedContentKey(f: FeedRecord): string {
+  return `${f.baby}|${f.timestamp.getTime()}|${f.type}|${f.volumeMl}`;
+}
+
 function mergeFeeds(existing: FeedRecord[], incoming: FeedRecord[]): FeedRecord[] {
-  const map = new Map<string, FeedRecord>();
-  for (const f of existing) map.set(f.id, f);
-  for (const f of incoming) map.set(f.id, f);
-  return [...map.values()].sort(
+  // First pass: merge by ID (existing behaviour)
+  const byId = new Map<string, FeedRecord>();
+  for (const f of existing) byId.set(f.id, f);
+  for (const f of incoming) byId.set(f.id, f);
+
+  // Second pass: deduplicate by content — when two entries share the same
+  // baby+timestamp+type+volume but have different IDs, keep the deterministic
+  // one (starts with "f|") so seed filtering keeps working correctly.
+  const byContent = new Map<string, FeedRecord>();
+  for (const f of byId.values()) {
+    const key = feedContentKey(f);
+    const prev = byContent.get(key);
+    if (!prev) {
+      byContent.set(key, f);
+    } else {
+      // Prefer the deterministic (seed) ID so seedFeedIds filtering works
+      const prevIsDeterministic = prev.id.startsWith('f|');
+      const currIsDeterministic = f.id.startsWith('f|');
+      if (currIsDeterministic && !prevIsDeterministic) {
+        byContent.set(key, f);
+      }
+      // Otherwise keep prev (first one wins)
+    }
+  }
+
+  return [...byContent.values()].sort(
     (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
   );
 }
 
+function sleepContentKey(s: SleepRecord): string {
+  return `${s.baby}|${s.startTime.getTime()}|${s.durationMin}`;
+}
+
 function mergeSleeps(existing: SleepRecord[], incoming: SleepRecord[]): SleepRecord[] {
-  const map = new Map<string, SleepRecord>();
-  for (const s of existing) map.set(s.id, s);
-  for (const s of incoming) map.set(s.id, s);
-  return [...map.values()].sort(
+  const byId = new Map<string, SleepRecord>();
+  for (const s of existing) byId.set(s.id, s);
+  for (const s of incoming) byId.set(s.id, s);
+
+  const byContent = new Map<string, SleepRecord>();
+  for (const s of byId.values()) {
+    const key = sleepContentKey(s);
+    const prev = byContent.get(key);
+    if (!prev) {
+      byContent.set(key, s);
+    } else {
+      const prevIsDeterministic = prev.id.startsWith('s|');
+      const currIsDeterministic = s.id.startsWith('s|');
+      if (currIsDeterministic && !prevIsDeterministic) {
+        byContent.set(key, s);
+      }
+    }
+  }
+
+  return [...byContent.values()].sort(
     (a, b) => a.startTime.getTime() - b.startTime.getTime()
   );
 }

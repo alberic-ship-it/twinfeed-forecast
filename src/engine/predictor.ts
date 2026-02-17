@@ -1,4 +1,4 @@
-import { addMinutes } from 'date-fns';
+import { addMinutes, differenceInMinutes } from 'date-fns';
 import type {
   BabyName,
   FeedRecord,
@@ -15,6 +15,77 @@ import { recencyWeight, weightedMedian } from './recency';
 
 // Re-export for backwards compatibility (consumers may import from predictor)
 export { INTERVAL_FILTER, getSlotId };
+
+/**
+ * Compute the weighted median latency (in minutes) between nap wake-up
+ * and the next feed, from historical data.
+ * Returns null if fewer than 3 data points.
+ */
+function computePostNapFeedLatency(
+  baby: BabyName,
+  allFeeds: FeedRecord[],
+  allSleeps: SleepRecord[],
+  now: Date,
+): number | null {
+  const babyFeeds = allFeeds
+    .filter((f) => f.baby === baby)
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  const babySleeps = allSleeps
+    .filter((s) => s.baby === baby && s.endTime)
+    .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+
+  const latencies: number[] = [];
+  const weights: number[] = [];
+
+  for (const nap of babySleeps) {
+    if (!nap.endTime) continue;
+    // Only daytime naps (6h–21h)
+    if (nap.startTime.getHours() < 6 || nap.startTime.getHours() >= 21) continue;
+
+    // Find the first feed after this nap's end (within 120 min)
+    const napEnd = nap.endTime.getTime();
+    let nextFeed: FeedRecord | null = null;
+    for (const f of babyFeeds) {
+      const ft = f.timestamp.getTime();
+      if (ft >= napEnd && ft <= napEnd + 120 * 60_000) {
+        nextFeed = f;
+        break;
+      }
+    }
+    if (!nextFeed) continue;
+
+    const latency = differenceInMinutes(nextFeed.timestamp, nap.endTime);
+    if (latency > 0 && latency <= 120) {
+      latencies.push(latency);
+      weights.push(recencyWeight(nap.endTime, now));
+    }
+  }
+
+  if (latencies.length < 3) return null;
+  return weightedMedian(latencies, weights);
+}
+
+/**
+ * Find the most recent nap that ended recently (within maxMinAgo minutes)
+ * for a given baby.
+ */
+function findRecentNapWakeUp(
+  baby: BabyName,
+  allSleeps: SleepRecord[],
+  now: Date,
+  maxMinAgo: number,
+): SleepRecord | null {
+  const cutoff = now.getTime() - maxMinAgo * 60_000;
+  let best: SleepRecord | null = null;
+  for (const s of allSleeps) {
+    if (s.baby !== baby || !s.endTime) continue;
+    const et = s.endTime.getTime();
+    if (et >= cutoff && et <= now.getTime()) {
+      if (!best || et > best.endTime!.getTime()) best = s;
+    }
+  }
+  return best;
+}
 
 function getSlotForHour(hour: number, baby: BabyName) {
   const profile = PROFILES[baby];
@@ -101,6 +172,32 @@ export function predictNextFeed(
     const slot = getSlotForHour(predictedTime.getHours(), baby);
     const slotIntervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
     predictedTime = addMinutes(predictedTime, Math.round(slotIntervalH * 60));
+  }
+
+  // --- POST-NAP ADJUSTMENT ---
+  // If baby recently woke from a nap, override with nap-based prediction
+  // (babies typically feed shortly after waking).
+  const recentNap = findRecentNapWakeUp(baby, allSleeps, now, 120);
+  if (recentNap?.endTime) {
+    const postNapLatency = computePostNapFeedLatency(baby, allFeeds, allSleeps, now);
+    // Default: 30 min post-nap if insufficient historical data
+    const latencyMin = postNapLatency ?? 30;
+    const postNapTime = addMinutes(recentNap.endTime, latencyMin);
+
+    // Only use post-nap prediction if it's sooner than the feed-based one
+    // and the baby hasn't already been fed since waking
+    const fedSinceWake = babyFeeds.some(
+      (f) => f.timestamp.getTime() >= recentNap.endTime!.getTime(),
+    );
+
+    if (!fedSinceWake && postNapTime > now && postNapTime < predictedTime) {
+      predictedTime = postNapTime;
+      explanations.push({
+        ruleId: 'POST_NAP',
+        text: `Réveil de sieste — repas attendu ~${latencyMin} min après`,
+        impact: `avancé de ${Math.round((predictedTime.getTime() - postNapTime.getTime()) / 60_000 + latencyMin)} min`,
+      });
+    }
   }
 
   const confidenceMinutes = Math.round(intervalH * 20);

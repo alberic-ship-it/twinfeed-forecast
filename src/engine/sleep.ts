@@ -1,6 +1,6 @@
 import { differenceInMinutes } from 'date-fns';
 import type { SleepRecord, FeedRecord, BabyName } from '../types';
-import { DEFAULT_SLEEP, NIGHT_SLEEP } from '../data/knowledge';
+import { DEFAULT_SLEEP, NIGHT_SLEEP, WAKE_WINDOWS } from '../data/knowledge';
 import { recencyWeight, weightedMedian, weightedAvg } from './recency';
 
 export interface SleepPrediction {
@@ -122,7 +122,9 @@ export function analyzeSleep(
   if (napsToday < defaults.napsPerDay) {
     let predictedTime: Date | null = null;
 
-    // Strategy 1: last feed + median latency
+    const lastTodayNap =
+      todayNaps.length > 0 ? todayNaps[todayNaps.length - 1] : null;
+
     const lastFeedToday = babyFeeds.filter(
       (f) => f.timestamp >= todayStart && f.timestamp <= now,
     );
@@ -131,7 +133,33 @@ export function analyzeSleep(
         ? lastFeedToday[lastFeedToday.length - 1]
         : null;
 
-    if (mostRecentFeed && medianLatency !== null) {
+    // Strategy A: if a nap was logged today, prioritize inter-nap interval
+    // (more relevant than feed-based when we know the baby slept)
+    if (lastTodayNap?.endTime) {
+      // A1: data-driven inter-nap interval
+      if (medianInterNap !== null) {
+        const fromNap = new Date(
+          lastTodayNap.endTime.getTime() + medianInterNap * 60_000,
+        );
+        if (fromNap > now) {
+          predictedTime = fromNap;
+        }
+      }
+
+      // A2: fallback to wake window if no inter-nap data
+      if (!predictedTime) {
+        const wakeWindowMin = (WAKE_WINDOWS.optimalMin + WAKE_WINDOWS.optimalMax) / 2;
+        const fromWake = new Date(
+          lastTodayNap.endTime.getTime() + wakeWindowMin * 60_000,
+        );
+        if (fromWake > now) {
+          predictedTime = fromWake;
+        }
+      }
+    }
+
+    // Strategy B: no nap today yet — use feed + median latency
+    if (!predictedTime && mostRecentFeed && medianLatency !== null) {
       const fromFeed = new Date(
         mostRecentFeed.timestamp.getTime() + medianLatency * 60_000,
       );
@@ -140,21 +168,7 @@ export function analyzeSleep(
       }
     }
 
-    // Strategy 2: last nap end + median inter-nap interval
-    if (!predictedTime) {
-      const lastTodayNap =
-        todayNaps.length > 0 ? todayNaps[todayNaps.length - 1] : null;
-      if (lastTodayNap?.endTime && medianInterNap !== null) {
-        const fromNap = new Date(
-          lastTodayNap.endTime.getTime() + medianInterNap * 60_000,
-        );
-        if (fromNap > now) {
-          predictedTime = fromNap;
-        }
-      }
-    }
-
-    // Strategy 3: fallback to default nap windows
+    // Strategy C: fallback to default nap windows
     if (!predictedTime) {
       const currentH = now.getHours() + now.getMinutes() / 60;
       for (let i = napsToday; i < defaults.bestNapTimes.length; i++) {
@@ -164,7 +178,6 @@ export function analyzeSleep(
           predictedTime = new Date(now);
           predictedTime.setHours(Math.floor(midH), Math.round((midH % 1) * 60), 0, 0);
           if (predictedTime <= now) {
-            // If midpoint already passed, use now + 15 min
             predictedTime = new Date(now.getTime() + 15 * 60_000);
           }
           break;

@@ -8,6 +8,9 @@ export function SleepLog() {
   const [selectedBaby, setSelectedBaby] = useState<BabyName | null>(null);
   const [hours, setHours] = useState(0);
   const [minutes, setMinutes] = useState(35);
+  const [mode, setMode] = useState<'now' | 'custom'>('now');
+  const [endHour, setEndHour] = useState(() => new Date().getHours());
+  const [endMin, setEndMin] = useState(() => Math.round(new Date().getMinutes() / 5) * 5);
 
   const handleBabyTap = (baby: BabyName) => {
     setSelectedBaby(selectedBaby === baby ? null : baby);
@@ -17,16 +20,29 @@ export function SleepLog() {
     if (!selectedBaby) return;
     const totalMin = hours * 60 + minutes;
     if (totalMin === 0) return;
-    logSleep(selectedBaby, totalMin);
+
+    let endTime: Date | undefined;
+    if (mode === 'custom') {
+      endTime = new Date();
+      endTime.setHours(endHour, endMin, 0, 0);
+      // Si l'heure saisie est dans le futur, on considère que c'était hier
+      if (endTime > new Date()) {
+        endTime.setDate(endTime.getDate() - 1);
+      }
+    }
+
+    logSleep(selectedBaby, totalMin, endTime);
     setSelectedBaby(null);
     setHours(0);
     setMinutes(35);
+    setMode('now');
   };
 
   const handleCancel = () => {
     setSelectedBaby(null);
     setHours(0);
     setMinutes(35);
+    setMode('now');
   };
 
   return (
@@ -57,11 +73,11 @@ export function SleepLog() {
         })}
       </div>
 
-      {/* Duration input */}
+      {/* Duration + end time input */}
       {selectedBaby && (
         <div className="space-y-3">
+          {/* Duration */}
           <div className="flex items-center justify-center gap-4">
-            {/* Hours */}
             <div className="flex flex-col items-center gap-1">
               <button
                 onClick={() => setHours(Math.min(3, hours + 1))}
@@ -78,7 +94,6 @@ export function SleepLog() {
               </button>
             </div>
 
-            {/* Minutes */}
             <div className="flex flex-col items-center gap-1">
               <button
                 onClick={() => setMinutes(Math.min(55, minutes + 5))}
@@ -97,6 +112,77 @@ export function SleepLog() {
               </button>
             </div>
           </div>
+
+          {/* Mode toggle: now vs custom end time */}
+          <div className="flex rounded-lg bg-gray-100 p-0.5">
+            <button
+              onClick={() => setMode('now')}
+              className={`flex-1 py-2 text-xs font-medium rounded-md transition-colors min-h-[36px] ${
+                mode === 'now'
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500'
+              }`}
+            >
+              Vient de se réveiller
+            </button>
+            <button
+              onClick={() => {
+                setMode('custom');
+                const now = new Date();
+                setEndHour(now.getHours());
+                setEndMin(Math.round(now.getMinutes() / 5) * 5);
+              }}
+              className={`flex-1 py-2 text-xs font-medium rounded-md transition-colors min-h-[36px] ${
+                mode === 'custom'
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500'
+              }`}
+            >
+              Réveil à...
+            </button>
+          </div>
+
+          {/* Custom end time picker */}
+          {mode === 'custom' && (
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-xs text-gray-500">Réveillé(e) à</span>
+              <div className="flex items-center gap-1 bg-gray-50 rounded-lg px-2 py-1">
+                <button
+                  onClick={() => setEndHour((h) => (h + 23) % 24)}
+                  className="w-8 h-8 rounded-full text-gray-500 font-bold hover:bg-gray-200 active:bg-gray-300 transition-colors text-xs"
+                >
+                  -
+                </button>
+                <span className="text-lg font-bold text-gray-800 tabular-nums w-8 text-center">
+                  {String(endHour).padStart(2, '0')}
+                </span>
+                <button
+                  onClick={() => setEndHour((h) => (h + 1) % 24)}
+                  className="w-8 h-8 rounded-full text-gray-500 font-bold hover:bg-gray-200 active:bg-gray-300 transition-colors text-xs"
+                >
+                  +
+                </button>
+              </div>
+              <span className="text-lg font-bold text-gray-400">:</span>
+              <div className="flex items-center gap-1 bg-gray-50 rounded-lg px-2 py-1">
+                <button
+                  onClick={() => setEndMin((m) => (m + 55) % 60)}
+                  className="w-8 h-8 rounded-full text-gray-500 font-bold hover:bg-gray-200 active:bg-gray-300 transition-colors text-xs"
+                >
+                  -
+                </button>
+                <span className="text-lg font-bold text-gray-800 tabular-nums w-8 text-center">
+                  {String(endMin).padStart(2, '0')}
+                </span>
+                <button
+                  onClick={() => setEndMin((m) => (m + 5) % 60)}
+                  className="w-8 h-8 rounded-full text-gray-500 font-bold hover:bg-gray-200 active:bg-gray-300 transition-colors text-xs"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2">
             <button
