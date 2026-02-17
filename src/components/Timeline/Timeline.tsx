@@ -50,20 +50,24 @@ function projectFeedsForDay(
 ): ProjectedFeed[] {
   const profile = PROFILES[baby];
 
-  // Check if there are manual feeds today (not just seed/historical data)
+  // Past context: always generate day projections before now (faded).
+  // Filter out projections that are too close to a real feed (within 45 min)
+  // to avoid visual noise / overlapping dots.
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
-  const hasTodayFeeds = allFeeds.some(
+  const todayFeeds = allFeeds.filter(
     (f) => f.baby === baby && f.timestamp >= todayStart && f.timestamp <= now,
   );
 
-  // Past context: show day projections before now (faded) only when
-  // there are no manual entries today — avoids visual noise with real dots.
-  const pastProjections: ProjectedFeed[] = [];
-  if (!hasTodayFeeds) {
-    const dayProjections = projectDayFromData(baby, allFeeds, now);
-    pastProjections.push(...dayProjections.filter((p) => p.time < now));
-  }
+  const dayProjections = projectDayFromData(baby, allFeeds, now);
+  const pastProjections = dayProjections
+    .filter((p) => p.time < now)
+    .filter((p) => {
+      // Keep projection only if no real feed is within 45 min of it
+      return !todayFeeds.some(
+        (f) => Math.abs(f.timestamp.getTime() - p.time.getTime()) < 45 * 60_000,
+      );
+    });
 
   // Future: anchor on the actual prediction, then chain forward
   // (consistent with BabyCard "prochain repas")
@@ -100,22 +104,25 @@ function projectNapsForDay(
   baby: BabyName,
   sleepAn: SleepAnalysis,
   now: Date,
-  hasTodaySleeps: boolean,
+  todaySleeps: SleepRecord[],
 ): ProjectedNap[] {
   const defaults = DEFAULT_SLEEP[baby];
   const napDuration = sleepAn.avgNapDurationMin;
 
-  // Past nap windows — only when no manual sleeps today (avoids noise
-  // with real sleep blocks already displayed)
+  // Past nap windows (faded) — filter out those overlapping a real sleep
   const pastNaps: ProjectedNap[] = [];
-  if (!hasTodaySleeps) {
-    for (const t of defaults.bestNapTimes) {
-      const napTime = new Date(now);
-      napTime.setHours(Math.floor(t.startH), (t.startH % 1) * 60, 0, 0);
-      const napEnd = new Date(napTime.getTime() + napDuration * 60_000);
-      if (napEnd < now) {
-        pastNaps.push({ time: napTime, durationMin: napDuration });
-      }
+  for (const t of defaults.bestNapTimes) {
+    const napTime = new Date(now);
+    napTime.setHours(Math.floor(t.startH), (t.startH % 1) * 60, 0, 0);
+    const napEnd = new Date(napTime.getTime() + napDuration * 60_000);
+    if (napEnd >= now) continue;
+
+    // Skip if a real sleep overlaps this window (within 45 min)
+    const overlaps = todaySleeps.some(
+      (s) => Math.abs(s.startTime.getTime() - napTime.getTime()) < 45 * 60_000,
+    );
+    if (!overlaps) {
+      pastNaps.push({ time: napTime, durationMin: napDuration });
     }
   }
 
@@ -189,10 +196,7 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
           const projectedFeeds = pred
             ? projectFeedsForDay(baby, pred, now, feeds)
             : [];
-          const hasTodaySleeps = sleeps.some(
-            (s) => s.baby === baby && isToday(s.startTime, now),
-          );
-          const projectedNaps = projectNapsForDay(baby, sleepAn, now, hasTodaySleeps);
+          const projectedNaps = projectNapsForDay(baby, sleepAn, now, babySleeps);
 
           // Next prediction text (for when projected feeds are empty = prediction is tomorrow)
           let nextPredText: string | null = null;
