@@ -62,11 +62,14 @@ export function parseCsv(
       const endTime = endStr ? parseDateTime(endStr) : undefined;
       const dur = isNaN(durationMin) ? 0 : durationMin;
 
+      // Compute endTime from startTime + duration if not explicitly provided
+      const computedEnd = endTime ?? (dur > 0 ? new Date(timestamp.getTime() + dur * 60_000) : undefined);
+
       sleeps.push({
         id: deterministicId(['s', baby, timestamp.toISOString(), dur]),
         baby,
         startTime: timestamp,
-        endTime: endTime ?? undefined,
+        endTime: computedEnd,
         durationMin: dur,
       });
     }
