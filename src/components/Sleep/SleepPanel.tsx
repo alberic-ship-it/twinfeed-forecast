@@ -104,12 +104,12 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
 
               {/* Next nap — normal */}
               {analysis.nextNap && analysis.sleepStatus === 'naps_remaining' && (
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide">Prochaine sieste</p>
-                  <p className="text-xl sm:text-2xl font-bold text-indigo-700">
+                <div className="bg-indigo-50 rounded-lg p-2.5">
+                  <p className="text-[11px] text-indigo-400 uppercase tracking-wide font-medium">Prochaine sieste</p>
+                  <p className="text-xl sm:text-2xl font-bold text-indigo-700 leading-tight">
                     {formatTime(analysis.nextNap.predictedTime)}
                   </p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-[11px] text-indigo-300 mt-0.5">
                     ±{analysis.nextNap.confidenceMin} min · ~{analysis.nextNap.estimatedDurationMin} min
                   </p>
                   {analysis.nextNap.hint && (
@@ -122,15 +122,15 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
 
               {/* Rescue nap */}
               {analysis.nextNap && analysis.sleepStatus === 'rescue_nap' && (
-                <div>
+                <div className="bg-orange-50 rounded-lg p-2.5">
                   <div className="flex items-center gap-1">
                     <AlertTriangle className="text-orange-400" size={11} />
-                    <p className="text-xs text-orange-500 uppercase tracking-wide">Sieste de rattrapage</p>
+                    <p className="text-[11px] text-orange-400 uppercase tracking-wide font-medium">Rattrapage</p>
                   </div>
-                  <p className="text-xl sm:text-2xl font-bold text-orange-600">
+                  <p className="text-xl sm:text-2xl font-bold text-orange-600 leading-tight">
                     {formatTime(analysis.nextNap.predictedTime)}
                   </p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-[11px] text-orange-300 mt-0.5">
                     ±{analysis.nextNap.confidenceMin} min · ~{analysis.nextNap.estimatedDurationMin} min
                   </p>
                   {analysis.nextNap.hint && (
@@ -143,9 +143,9 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
 
               {/* Naps done — compact badge */}
               {analysis.sleepStatus === 'naps_done' && (
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 bg-green-50 rounded-lg px-2.5 py-1.5">
                   <CheckCircle className="text-green-500 shrink-0" size={12} />
-                  <p className="text-xs text-green-700">
+                  <p className="text-xs text-green-700 font-medium">
                     {analysis.napsToday} sieste{analysis.napsToday > 1 ? 's' : ''}
                   </p>
                 </div>
@@ -153,12 +153,12 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
 
               {/* Bedtime */}
               {analysis.bedtime && (
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide">Dodo</p>
-                  <p className="text-xl sm:text-2xl font-bold text-purple-700">
+                <div className="bg-purple-50 rounded-lg p-2.5">
+                  <p className="text-[11px] text-purple-400 uppercase tracking-wide font-medium">Dodo</p>
+                  <p className="text-xl sm:text-2xl font-bold text-purple-700 leading-tight">
                     {formatTime(analysis.bedtime.predictedTime)}
                   </p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-[11px] text-purple-300 mt-0.5">
                     ±{analysis.bedtime.confidenceMin} min · ~{formatDuration(analysis.bedtime.estimatedDurationMin)} de nuit
                   </p>
                 </div>
