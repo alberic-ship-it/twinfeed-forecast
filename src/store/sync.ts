@@ -69,3 +69,12 @@ export async function pushEntries(
 export async function clearSharedEntries(): Promise<void> {
   await fetch(API_URL, { method: 'DELETE' });
 }
+
+/** Delete specific entries by ID on the server. */
+export async function deleteServerEntries(opts: { deleteSleepIds?: string[]; deleteFeedIds?: string[] }): Promise<void> {
+  await fetch(API_URL, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts),
+  });
+}

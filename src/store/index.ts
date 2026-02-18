@@ -18,7 +18,7 @@ import { detectPatterns } from '../engine/patterns';
 import { analyzeFeedSleepLinks } from '../engine/feedSleepLinks';
 import { analyzeSleep } from '../engine/sleep';
 import type { SleepAnalysis } from '../engine/sleep';
-import { fetchSharedEntries, pushEntries, clearSharedEntries } from './sync';
+import { fetchSharedEntries, pushEntries, clearSharedEntries, deleteServerEntries } from './sync';
 
 interface Store {
   screen: Screen;
@@ -166,6 +166,9 @@ export const useStore = create<Store>((set, get) => ({
     _lastRefreshKey = '';
     get().refreshPredictions();
     _refreshInsights(get, set);
+
+    // Delete from server too
+    deleteServerEntries({ deleteSleepIds: [id] }).catch(() => {});
   },
 
   refreshPredictions: () => {

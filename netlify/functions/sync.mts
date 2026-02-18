@@ -80,5 +80,24 @@ export default async (req: Request, _context: Context) => {
     return Response.json({ ok: true, kept: 0 });
   }
 
+  if (req.method === "PATCH") {
+    // Remove specific entries by ID
+    const body = await req.json() as { deleteSleepIds?: string[]; deleteFeedIds?: string[] };
+    const deleteSleepIds = new Set(body.deleteSleepIds ?? []);
+    const deleteFeedIds = new Set(body.deleteFeedIds ?? []);
+
+    const raw = await store.get(KEY);
+    if (raw) {
+      const current: StoredData = JSON.parse(raw);
+      const updated: StoredData = {
+        feeds: current.feeds.filter((f) => !deleteFeedIds.has(f.id as string)),
+        sleeps: current.sleeps.filter((s) => !deleteSleepIds.has(s.id as string)),
+      };
+      await store.set(KEY, JSON.stringify(updated));
+      return Response.json({ ok: true });
+    }
+    return Response.json({ ok: true });
+  }
+
   return new Response("Method not allowed", { status: 405 });
 };
