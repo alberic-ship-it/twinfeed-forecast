@@ -62,6 +62,37 @@ export interface SleepRecord {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Night Module
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface NightFeedEntry {
+  id: string;
+  baby: BabyName;
+  timestamp: Date;
+  type: 'bottle' | 'breast';
+  volumeMl: number;
+}
+
+export interface NightSession {
+  id: string;
+  baby: BabyName;
+  startTime: Date;
+  endTime?: Date;
+  feeds: NightFeedEntry[];
+}
+
+export interface NightRecap {
+  baby: BabyName;
+  session: NightSession;
+  totalDurationMin: number;
+  feedCount: number;
+  totalVolumeMl: number;
+  longestStretchMin: number;
+  avgInterFeedMin: number;
+  dismissed: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Time Slots & Profiles
 // ═══════════════════════════════════════════════════════════════════════════
 

@@ -1,5 +1,5 @@
 import { differenceInMinutes, startOfDay } from 'date-fns';
-import type { SleepRecord, FeedRecord, BabyName } from '../types';
+import type { SleepRecord, FeedRecord, BabyName, NightSession } from '../types';
 import { DEFAULT_SLEEP, NIGHT_SLEEP, WAKE_WINDOWS } from '../data/knowledge';
 import { recencyWeight, weightedMedian, weightedAvg, percentile, filterRecentFeeds, filterRecentSleeps } from './recency';
 
@@ -10,7 +10,7 @@ export interface SleepPrediction {
   hint?: string;
 }
 
-export type SleepStatus = 'naps_remaining' | 'naps_done' | 'rescue_nap';
+export type SleepStatus = 'naps_remaining' | 'naps_done' | 'rescue_nap' | 'night_active';
 export type SleepQuality = 'good' | 'fair' | 'poor';
 
 export interface SleepAnalysis {
@@ -33,6 +33,14 @@ export interface SleepAnalysis {
   sleepQuality: SleepQuality;
   /** Today's nap records (for display/deletion in UI) */
   todayNapRecords: SleepRecord[];
+  /** Night progress when a night session is active */
+  nightProgress?: {
+    durationSoFarMin: number;
+    feedCount: number;
+    lastFeedAgoMin: number | null;
+    expectedWakeTime: Date;
+    medianNightDurationMin: number;
+  };
 }
 
 // ── Helpers ──
@@ -121,6 +129,7 @@ export function analyzeSleep(
   rawSleeps: SleepRecord[],
   rawFeeds: FeedRecord[],
   now: Date,
+  activeNight?: NightSession,
 ): SleepAnalysis {
   const defaults = DEFAULT_SLEEP[baby];
   const sleeps = filterRecentSleeps(rawSleeps, now);
@@ -133,6 +142,55 @@ export function analyzeSleep(
   const babyFeeds = feeds
     .filter((f) => f.baby === baby)
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+  // ── Night active mode: early return with progress ──
+  if (activeNight && !activeNight.endTime) {
+    // Compute median night duration from historical data
+    const histNightSleeps = babySleeps.filter(
+      (s) => s.startTime.getHours() >= NIGHT_SLEEP.minStartHour && s.durationMin > NIGHT_SLEEP.minDurationMin,
+    );
+    const nightDurations = histNightSleeps.map((s) => s.durationMin);
+    const nightWeights = histNightSleeps.map((s) => recencyWeight(s.startTime, now));
+    const medianNightDuration = nightDurations.length >= 3
+      ? Math.round(weightedMedian(nightDurations, nightWeights))
+      : defaults.nightDurationMin;
+
+    const durationSoFarMin = Math.round((now.getTime() - activeNight.startTime.getTime()) / 60_000);
+    const nightFeeds = activeNight.feeds;
+    const lastFeed = nightFeeds.length > 0 ? nightFeeds[nightFeeds.length - 1] : null;
+    const lastFeedAgoMin = lastFeed ? Math.round((now.getTime() - lastFeed.timestamp.getTime()) / 60_000) : null;
+    const expectedWakeTime = new Date(activeNight.startTime.getTime() + medianNightDuration * 60_000);
+
+    // Still compute today's naps for context
+    const todayStart = new Date(now);
+    todayStart.setHours(6, 0, 0, 0);
+    const todayNaps = babySleeps.filter(
+      (s) => s.startTime >= todayStart && s.startTime.getHours() >= 6 && s.startTime.getHours() < 21,
+    );
+    const totalSleepToday = todayNaps.reduce((sum, s) => sum + s.durationMin, 0);
+
+    return {
+      baby,
+      totalSleepToday,
+      napsToday: todayNaps.length,
+      nextNap: null,
+      bedtime: null,
+      medianInterNapMin: null,
+      avgNapDurationMin: defaults.napDurationMin,
+      estimatedBedtimeDate: activeNight.startTime,
+      sleepStatus: 'night_active',
+      expectedDaySleepMin: defaults.napsPerDay * defaults.napDurationMin,
+      sleepQuality: 'good',
+      todayNapRecords: todayNaps,
+      nightProgress: {
+        durationSoFarMin,
+        feedCount: nightFeeds.length,
+        lastFeedAgoMin,
+        expectedWakeTime,
+        medianNightDurationMin: medianNightDuration,
+      },
+    };
+  }
 
   // Today's naps (6h–21h)
   const todayStart = new Date(now);

@@ -10,6 +10,8 @@ import { SleepPanel } from '../Sleep/SleepPanel';
 import { Recommendations } from '../Recommendations/Recommendations';
 import { QuickLog } from '../QuickLog/QuickLog';
 import { SleepLog } from '../QuickLog/SleepLog';
+import { NightModule } from '../Night/NightModule';
+import { NightRecapCard } from '../Night/NightRecap';
 import type { BabyName } from '../../types';
 
 export function DashboardScreen() {
@@ -73,6 +75,12 @@ export function DashboardScreen() {
       </header>
 
       <main className="max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4 pb-8">
+        {/* Night module (top when active) */}
+        <NightModule analyses={sleepAnalyses} />
+
+        {/* Night recap (after night ends) */}
+        <NightRecapCard />
+
         {/* Quick log */}
         <QuickLog />
 

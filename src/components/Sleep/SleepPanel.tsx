@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Lightbulb, BookOpen, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { Lightbulb, BookOpen, CheckCircle, AlertTriangle, Trash2, Moon } from 'lucide-react';
 import type { BabyName, FeedSleepAnalysis, InsightConfidence } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
 import { useStore } from '../../store';
@@ -80,6 +80,8 @@ function pickHourlyInsight(insights: FeedSleepAnalysis | null, hour: number) {
 
 export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProps) {
   const deleteSleep = useStore((s) => s.deleteSleep);
+  const startNight = useStore((s) => s.startNight);
+  const nightSessions = useStore((s) => s.nightSessions);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const coletteInsight = useMemo(() => pickHourlyInsight(feedSleepInsights.colette, hour), [feedSleepInsights.colette, hour]);
@@ -164,6 +166,7 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
               {/* Bedtime */}
               {analysis.bedtime && (() => {
                 const wakeTime = new Date(analysis.bedtime.predictedTime.getTime() + analysis.bedtime.estimatedDurationMin * 60_000);
+                const nightActive = nightSessions[baby] && !nightSessions[baby]!.endTime;
                 return (
                   <div className="bg-purple-50 rounded-lg p-2.5">
                     <p className="text-[11px] text-purple-400 uppercase tracking-wide font-medium">Dodo</p>
@@ -173,6 +176,15 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                     <p className="text-[11px] text-purple-300 mt-0.5">
                       ±{analysis.bedtime.confidenceMin} min · réveil ~{formatTime(wakeTime)}
                     </p>
+                    {!nightActive && (
+                      <button
+                        onClick={() => startNight(baby)}
+                        className="flex items-center gap-1 mt-1.5 px-2 py-1 bg-purple-100 hover:bg-purple-200 active:bg-purple-300 text-purple-600 text-[11px] font-medium rounded transition-colors"
+                      >
+                        <Moon size={11} />
+                        Lancer la nuit
+                      </button>
+                    )}
                   </div>
                 );
               })()}

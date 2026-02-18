@@ -9,6 +9,9 @@ import type {
   Alert,
   DetectedPattern,
   FeedSleepAnalysis,
+  NightSession,
+  NightRecap,
+  NightFeedEntry,
 } from '../types';
 import { PROFILES } from '../data/knowledge';
 import { parseCsv } from '../data/parser';
@@ -18,7 +21,7 @@ import { detectPatterns } from '../engine/patterns';
 import { analyzeFeedSleepLinks } from '../engine/feedSleepLinks';
 import { analyzeSleep } from '../engine/sleep';
 import type { SleepAnalysis } from '../engine/sleep';
-import { fetchSharedEntries, pushEntries, clearSharedEntries, deleteServerEntries } from './sync';
+import { fetchSharedEntries, pushEntries, clearSharedEntries, deleteServerEntries, pushNightSessions, fetchNightSessions } from './sync';
 
 interface Store {
   screen: Screen;
@@ -30,6 +33,8 @@ interface Store {
   patterns: DetectedPattern[];
   feedSleepInsights: Record<BabyName, FeedSleepAnalysis | null>;
   sleepAnalyses: Record<BabyName, SleepAnalysis>;
+  nightSessions: Record<BabyName, NightSession | null>;
+  nightRecaps: NightRecap[];
   dataLoaded: boolean;
   lastUpdated: Date | null;
 
@@ -39,6 +44,9 @@ interface Store {
   logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number) => void;
   logSleep: (baby: BabyName, durationMin: number, endTime?: Date) => void;
   deleteSleep: (id: string) => void;
+  startNight: (baby: BabyName) => void;
+  endNight: (baby: BabyName) => void;
+  dismissNightRecap: (baby: BabyName) => void;
   refreshPredictions: () => void;
   dismissAlert: (id: string) => void;
   reset: () => void;
@@ -66,6 +74,51 @@ function saveDismissed(ids: Set<string>) {
 }
 const dismissedAlertIds = loadDismissed();
 
+// Night sessions persistence in localStorage
+const NIGHT_SESSIONS_KEY = 'twinfeed-night-sessions';
+
+function saveNightSessions(sessions: Record<BabyName, NightSession | null>) {
+  const serializable: Record<string, unknown> = {};
+  for (const baby of ['colette', 'isaure'] as BabyName[]) {
+    const s = sessions[baby];
+    if (!s) { serializable[baby] = null; continue; }
+    serializable[baby] = {
+      ...s,
+      startTime: s.startTime.toISOString(),
+      endTime: s.endTime?.toISOString(),
+      feeds: s.feeds.map((f) => ({ ...f, timestamp: f.timestamp.toISOString() })),
+    };
+  }
+  localStorage.setItem(NIGHT_SESSIONS_KEY, JSON.stringify(serializable));
+}
+
+function loadNightSessions(): Record<BabyName, NightSession | null> {
+  try {
+    const raw = localStorage.getItem(NIGHT_SESSIONS_KEY);
+    if (!raw) return { colette: null, isaure: null };
+    const parsed = JSON.parse(raw) as Record<string, Record<string, unknown> | null>;
+    const result: Record<BabyName, NightSession | null> = { colette: null, isaure: null };
+    for (const baby of ['colette', 'isaure'] as BabyName[]) {
+      const s = parsed[baby];
+      if (!s) continue;
+      result[baby] = {
+        id: s.id as string,
+        baby: s.baby as BabyName,
+        startTime: new Date(s.startTime as string),
+        endTime: s.endTime ? new Date(s.endTime as string) : undefined,
+        feeds: ((s.feeds as Record<string, unknown>[]) ?? []).map((f) => ({
+          id: f.id as string,
+          baby: f.baby as BabyName,
+          timestamp: new Date(f.timestamp as string),
+          type: f.type as 'bottle' | 'breast',
+          volumeMl: f.volumeMl as number,
+        })),
+      };
+    }
+    return result;
+  } catch { return { colette: null, isaure: null }; }
+}
+
 /** Internal: refresh feed-sleep insights. Not exposed on the public Store interface. */
 function _refreshInsights(get: () => Store, set: (partial: Partial<Store>) => void) {
   const { feeds, sleeps } = get();
@@ -91,6 +144,8 @@ export const useStore = create<Store>((set, get) => ({
     colette: analyzeSleep('colette', [], [], new Date()),
     isaure: analyzeSleep('isaure', [], [], new Date()),
   },
+  nightSessions: loadNightSessions(),
+  nightRecaps: [],
   dataLoaded: false,
   lastUpdated: null,
 
@@ -125,11 +180,33 @@ export const useStore = create<Store>((set, get) => ({
       type,
       volumeMl: ml ?? 0,
     };
-    const { feeds } = get();
+    const { feeds, nightSessions } = get();
     const allFeeds = [...feeds, feed].sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
     );
-    set({ feeds: allFeeds, dataLoaded: true });
+
+    // If night is active for this baby, add feed to the night session
+    const activeNight = nightSessions[baby];
+    if (activeNight && !activeNight.endTime) {
+      const nightFeed: NightFeedEntry = {
+        id: feed.id,
+        baby,
+        timestamp: feed.timestamp,
+        type: feed.type,
+        volumeMl: feed.volumeMl,
+      };
+      const updatedSession: NightSession = {
+        ...activeNight,
+        feeds: [...activeNight.feeds, nightFeed],
+      };
+      const updatedSessions = { ...nightSessions, [baby]: updatedSession };
+      set({ feeds: allFeeds, dataLoaded: true, nightSessions: updatedSessions });
+      saveNightSessions(updatedSessions);
+      pushNightSessions(updatedSessions).catch(() => {});
+    } else {
+      set({ feeds: allFeeds, dataLoaded: true });
+    }
+
     get().refreshPredictions();
 
     // Push to server
@@ -171,8 +248,96 @@ export const useStore = create<Store>((set, get) => ({
     deleteServerEntries({ deleteSleepIds: [id] }).catch(() => {});
   },
 
+  startNight: (baby) => {
+    const { nightSessions } = get();
+    if (nightSessions[baby] && !nightSessions[baby]!.endTime) return; // already active
+    const session: NightSession = {
+      id: crypto.randomUUID(),
+      baby,
+      startTime: new Date(),
+      feeds: [],
+    };
+    const updated = { ...nightSessions, [baby]: session };
+    set({ nightSessions: updated });
+    saveNightSessions(updated);
+    pushNightSessions(updated).catch(() => {});
+  },
+
+  endNight: (baby) => {
+    const { nightSessions, nightRecaps, sleeps } = get();
+    const session = nightSessions[baby];
+    if (!session || session.endTime) return;
+
+    const endTime = new Date();
+    const totalDurationMin = Math.round((endTime.getTime() - session.startTime.getTime()) / 60_000);
+
+    // Create SleepRecord for this night
+    const nightSleep: SleepRecord = {
+      id: crypto.randomUUID(),
+      baby,
+      startTime: session.startTime,
+      endTime,
+      durationMin: totalDurationMin,
+    };
+
+    // Compute recap stats
+    const feeds = session.feeds.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    const feedCount = feeds.length;
+    const totalVolumeMl = feeds.reduce((sum, f) => sum + f.volumeMl, 0);
+
+    // Compute longest stretch without feed and average inter-feed interval
+    const timestamps = [session.startTime, ...feeds.map((f) => f.timestamp), endTime];
+    let longestStretchMin = 0;
+    const gaps: number[] = [];
+    for (let i = 1; i < timestamps.length; i++) {
+      const gap = Math.round((timestamps[i].getTime() - timestamps[i - 1].getTime()) / 60_000);
+      gaps.push(gap);
+      if (gap > longestStretchMin) longestStretchMin = gap;
+    }
+    const avgInterFeedMin = gaps.length > 0 ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : 0;
+
+    const endedSession: NightSession = { ...session, endTime };
+    const recap: NightRecap = {
+      baby,
+      session: endedSession,
+      totalDurationMin,
+      feedCount,
+      totalVolumeMl,
+      longestStretchMin,
+      avgInterFeedMin,
+      dismissed: false,
+    };
+
+    const updatedSessions = { ...nightSessions, [baby]: null };
+    const allSleeps = [...sleeps, nightSleep].sort(
+      (a, b) => a.startTime.getTime() - b.startTime.getTime()
+    );
+
+    set({
+      nightSessions: updatedSessions,
+      nightRecaps: [...nightRecaps.filter((r) => r.baby !== baby || r.dismissed), recap],
+      sleeps: allSleeps,
+    });
+    saveNightSessions(updatedSessions);
+    pushNightSessions(updatedSessions).catch(() => {});
+    pushEntries([], [nightSleep]).catch(() => {});
+
+    // Force refresh predictions with new sleep data
+    _lastRefreshKey = '';
+    get().refreshPredictions();
+    _refreshInsights(get, set);
+  },
+
+  dismissNightRecap: (baby) => {
+    set((state) => ({
+      nightRecaps: state.nightRecaps.map((r) =>
+        r.baby === baby ? { ...r, dismissed: true } : r
+      ),
+    }));
+  },
+
   refreshPredictions: () => {
-    const { feeds, sleeps } = get();
+    const { feeds, sleeps, nightSessions } = get();
     const now = new Date();
 
     // Skip if data hasn't changed and last refresh was recent
@@ -190,8 +355,10 @@ export const useStore = create<Store>((set, get) => ({
     );
     const colettePatterns = detectPatterns('colette', feeds, sleeps, now);
     const isaurePatterns = detectPatterns('isaure', feeds, sleeps, now);
-    const coletteSleep = analyzeSleep('colette', sleeps, feeds, now);
-    const isaureSleep = analyzeSleep('isaure', sleeps, feeds, now);
+    const coletteNight = nightSessions.colette && !nightSessions.colette.endTime ? nightSessions.colette : undefined;
+    const isaureNight = nightSessions.isaure && !nightSessions.isaure.endTime ? nightSessions.isaure : undefined;
+    const coletteSleep = analyzeSleep('colette', sleeps, feeds, now, coletteNight);
+    const isaureSleep = analyzeSleep('isaure', sleeps, feeds, now, isaureNight);
 
     set({
       predictions: { colette: colettePred, isaure: isaurePred },
@@ -214,6 +381,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   reset: () => {
+    const emptyNights: Record<BabyName, NightSession | null> = { colette: null, isaure: null };
     set({
       screen: 'dashboard',
       feeds: [],
@@ -226,9 +394,12 @@ export const useStore = create<Store>((set, get) => ({
         colette: analyzeSleep('colette', [], [], new Date()),
         isaure: analyzeSleep('isaure', [], [], new Date()),
       },
+      nightSessions: emptyNights,
+      nightRecaps: [],
       dataLoaded: false,
       lastUpdated: null,
     });
+    saveNightSessions(emptyNights);
     clearSharedEntries().catch(() => {});
     loadSeedData();
   },
@@ -379,10 +550,20 @@ async function migrateLocalStorage(): Promise<{ feeds: FeedRecord[]; sleeps: Sle
 export async function initData() {
   const seeds = await loadSeedData();
 
-  const [shared, migrated] = await Promise.all([
+  const [shared, migrated, serverNights] = await Promise.all([
     fetchSharedEntries().catch(() => ({ feeds: [] as FeedRecord[], sleeps: [] as SleepRecord[] })),
     migrateLocalStorage(),
+    fetchNightSessions().catch(() => ({ colette: null, isaure: null } as Record<BabyName, NightSession | null>)),
   ]);
+
+  // Merge night sessions: prefer local (more up-to-date) over server
+  const localNights = loadNightSessions();
+  const mergedNights: Record<BabyName, NightSession | null> = { colette: null, isaure: null };
+  for (const baby of ['colette', 'isaure'] as BabyName[]) {
+    mergedNights[baby] = localNights[baby] ?? serverNights[baby] ?? null;
+  }
+  saveNightSessions(mergedNights);
+  useStore.setState({ nightSessions: mergedNights });
 
   const allFeeds = mergeFeeds(mergeFeeds(seeds.feeds, shared.feeds), migrated.feeds);
   const allSleeps = mergeSleeps(mergeSleeps(seeds.sleeps, shared.sleeps), migrated.sleeps);
