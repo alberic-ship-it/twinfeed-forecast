@@ -80,7 +80,7 @@ export function SleepLog() {
           <div className="flex items-center justify-center gap-4">
             <div className="flex flex-col items-center gap-1">
               <button
-                onClick={() => setHours(Math.min(3, hours + 1))}
+                onClick={() => setHours(Math.min(14, hours + 1))}
                 className="w-11 h-11 rounded-full bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 active:bg-gray-300 transition-colors"
               >
                 +
