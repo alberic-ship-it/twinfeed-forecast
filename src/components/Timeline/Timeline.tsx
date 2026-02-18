@@ -351,7 +351,21 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
           const babySleeps = sleeps.filter((s) => s.baby === baby && isToday(s.startTime, now));
           const pred = predictions[baby];
           const sleepAn = sleepAnalyses[baby];
-          const projNaps = projectNapsForDay(baby, sleepAn, now, babySleeps, sleeps);
+          const projNapsRaw = projectNapsForDay(baby, sleepAn, now, babySleeps, sleeps);
+
+          // Final safety net: remove any projected nap that overlaps a real sleep
+          const projNaps = projNapsRaw.filter((pn) => {
+            if (pn.isNight) return true;
+            const pStart = pn.time.getTime();
+            const pEnd = pStart + pn.durationMin * 60_000;
+            return !babySleeps.some((s) => {
+              const rStart = s.startTime.getTime();
+              const rEnd = s.endTime ? s.endTime.getTime() : rStart + s.durationMin * 60_000;
+              // Overlap with 60min buffer
+              return pStart < rEnd + 60 * 60_000 && pEnd > rStart - 60 * 60_000;
+            });
+          });
+
           const projFeeds = pred ? projectFeedsForDay(baby, pred, now, feeds, babySleeps, projNaps) : [];
           const nightBlocks = projNaps.filter((n) => n.isNight);
           const napBlocks = projNaps.filter((n) => !n.isNight);
