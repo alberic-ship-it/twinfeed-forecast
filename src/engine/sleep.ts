@@ -118,18 +118,17 @@ export function analyzeSleep(
       ? Math.round(weightedAvg(napDurations, napDurWeights))
       : defaults.napDurationMin;
 
-  // ── Effective nap count: logged + projected past naps ──
-  // When no naps are logged, count default nap windows that have already passed
-  // as "probable" naps, so predictions stay consistent with the Timeline.
-  let effectiveNapsToday = napsToday;
-  if (napsToday === 0) {
-    const currentH = now.getHours() + now.getMinutes() / 60;
-    for (const window of defaults.bestNapTimes) {
-      if (currentH >= window.endH) {
-        effectiveNapsToday++;
-      }
+  // ── Effective nap count: max(logged, projected past windows) ──
+  // Count default nap windows that have already elapsed as "probable" naps,
+  // so predictions stay consistent with the Timeline projections.
+  const currentH = now.getHours() + now.getMinutes() / 60;
+  let projectedPastNaps = 0;
+  for (const window of defaults.bestNapTimes) {
+    if (currentH >= window.endH) {
+      projectedPastNaps++;
     }
   }
+  const effectiveNapsToday = Math.max(napsToday, projectedPastNaps);
 
   // ── Next nap prediction ──
   let nextNap: SleepPrediction | null = null;
