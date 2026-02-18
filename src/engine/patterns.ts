@@ -124,25 +124,5 @@ export function detectPatterns(
     }
   }
 
-  // --- DESYNC (twin-specific, informational only — no timing/volume modifier) ---
-  const otherBaby: BabyName = baby === 'colette' ? 'isaure' : 'colette';
-  const otherFeeds = allFeeds
-    .filter((f) => f.baby === otherBaby)
-    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-
-  if (babyFeeds.length > 0 && otherFeeds.length > 0) {
-    const lastOther = otherFeeds[otherFeeds.length - 1];
-    const gap = Math.abs(differenceInMinutes(lastFeed.timestamp, lastOther.timestamp));
-    if (gap > 60) {
-      patterns.push({
-        id: 'DESYNC',
-        label: 'Désynchronisation',
-        description: `Écart de ${gap} min avec ${otherBaby === 'colette' ? 'Colette' : 'Isaure'}`,
-        baby,
-        detectedAt: now,
-      });
-    }
-  }
-
   return patterns;
 }

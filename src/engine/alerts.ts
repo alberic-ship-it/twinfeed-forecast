@@ -1,11 +1,10 @@
 import { differenceInHours, subDays } from 'date-fns';
-import type { FeedRecord, Alert, TwinsSyncStatus, BabyName } from '../types';
-import { PROFILES, SYNC_THRESHOLDS, getSlotId } from '../data/knowledge';
+import type { FeedRecord, Alert, BabyName } from '../types';
+import { PROFILES, getSlotId } from '../data/knowledge';
 import { computeSlotVolume } from './predictor';
 
 export function generateAlerts(
   feeds: FeedRecord[],
-  syncStatus: TwinsSyncStatus | null,
 ): Alert[] {
   const alerts: Alert[] = [];
   const now = new Date();
@@ -91,18 +90,6 @@ export function generateAlerts(
         });
       }
     }
-  }
-
-  // --- TWINS DESYNC ---
-  if (syncStatus && syncStatus.gapMinutes > SYNC_THRESHOLDS.desyncAlert) {
-    alerts.push({
-      id: 'twins-desync',
-      type: 'TWINS_DESYNC',
-      severity: 'info',
-      message: `Les jumelles sont décalées de ${Math.round(syncStatus.gapMinutes)} minutes. ${syncStatus.suggestion ?? ''}`,
-      timestamp: now,
-      dismissed: false,
-    });
   }
 
   return alerts;

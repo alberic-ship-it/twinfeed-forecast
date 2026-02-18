@@ -1,5 +1,5 @@
-import type { BabyName, FeedRecord, DetectedPattern, Prediction, TwinsSyncStatus } from '../types';
-import { PROFILES, SYNC_THRESHOLDS } from './knowledge';
+import type { BabyName, FeedRecord, DetectedPattern, Prediction } from '../types';
+import { PROFILES } from './knowledge';
 
 export type RecommendationType = 'info' | 'suggestion' | 'reassurance' | 'benchmark';
 
@@ -9,7 +9,7 @@ export interface Recommendation {
   title: string;
   message: string;
   type: RecommendationType;
-  category?: 'pattern' | 'feeding' | 'sleep' | 'development' | 'twins';
+  category?: 'pattern' | 'feeding' | 'sleep' | 'development';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -42,7 +42,6 @@ export function generateRecommendations(
   feeds: FeedRecord[],
   patterns: DetectedPattern[],
   predictions: Record<BabyName, Prediction | null>,
-  syncStatus: TwinsSyncStatus | null,
 ): Recommendation[] {
   const recs: Recommendation[] = [];
   const now = new Date();
@@ -134,18 +133,6 @@ export function generateRecommendations(
         });
       }
     }
-  }
-
-  // ── Twin sync recommendation ──
-  // Aligned with alerts.ts: only show desync recommendation at same threshold (60 min)
-  if (syncStatus && syncStatus.gapMinutes > SYNC_THRESHOLDS.desyncAlert) {
-    recs.push({
-      id: 'sync-suggestion',
-      title: 'Désynchronisation',
-      message: `Les jumelles sont décalées de ${Math.round(syncStatus.gapMinutes)} min. ${syncStatus.suggestion ?? 'Essayez de rapprocher les prochains repas.'}`,
-      type: 'suggestion',
-      category: 'twins',
-    });
   }
 
   return recs;

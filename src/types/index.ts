@@ -13,11 +13,8 @@ export type AlertSeverity = 'info' | 'warning';
 export type AlertType =
   | 'SMALL_FEED'
   | 'VERY_SMALL_FEED'
-  | 'TWINS_DESYNC'
   | 'GROWTH_SPURT'
   | 'APPETITE_DROP';
-
-export type SyncState = 'synchronized' | 'slightly_offset' | 'desynchronized';
 
 export type PatternId =
   | 'CLUSTER'
@@ -25,8 +22,7 @@ export type PatternId =
   | 'EVENING'
   | 'NIGHT_LIGHT'
   | 'POST_NAP'
-  | 'GROWTH'
-  | 'DESYNC';
+  | 'GROWTH';
 
 export type Screen = 'import' | 'dashboard' | 'insights';
 
@@ -151,21 +147,6 @@ export interface DetectedPattern {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Twins Sync
-// ═══════════════════════════════════════════════════════════════════════════
-
-export interface TwinsSyncStatus {
-  state: SyncState;
-  gapMinutes: number;
-  syncRate: number; // 0-1
-  commonWindow?: {
-    start: Date;
-    end: Date;
-  };
-  suggestion?: string;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // Alerts
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -212,7 +193,6 @@ export interface AppState {
   sleeps: SleepRecord[];
   profiles: Record<BabyName, BabyProfile>;
   predictions: Record<BabyName, Prediction | null>;
-  syncStatus: TwinsSyncStatus | null;
   alerts: Alert[];
   patterns: DetectedPattern[];
   dataLoaded: boolean;

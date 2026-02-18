@@ -1,7 +1,7 @@
 import { differenceInMinutes } from 'date-fns';
 import type { SleepRecord, FeedRecord, BabyName } from '../types';
 import { DEFAULT_SLEEP, NIGHT_SLEEP, WAKE_WINDOWS } from '../data/knowledge';
-import { recencyWeight, weightedMedian, weightedAvg } from './recency';
+import { recencyWeight, weightedMedian, weightedAvg, filterRecentFeeds, filterRecentSleeps } from './recency';
 
 export interface SleepPrediction {
   predictedTime: Date;
@@ -48,11 +48,13 @@ function findLastFeedBefore(
 
 export function analyzeSleep(
   baby: BabyName,
-  sleeps: SleepRecord[],
-  feeds: FeedRecord[],
+  rawSleeps: SleepRecord[],
+  rawFeeds: FeedRecord[],
   now: Date,
 ): SleepAnalysis {
   const defaults = DEFAULT_SLEEP[baby];
+  const sleeps = filterRecentSleeps(rawSleeps, now);
+  const feeds = filterRecentFeeds(rawFeeds, now);
 
   const babySleeps = sleeps
     .filter((s) => s.baby === baby)

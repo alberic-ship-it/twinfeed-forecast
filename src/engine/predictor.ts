@@ -11,7 +11,7 @@ import type {
 import { PROFILES } from '../data/knowledge';
 import { INTERVAL_FILTER, getSlotId } from '../data/knowledge';
 import { detectPatterns } from './patterns';
-import { recencyWeight, weightedMedian } from './recency';
+import { recencyWeight, weightedMedian, filterRecentFeeds, filterRecentSleeps } from './recency';
 
 // Re-export for backwards compatibility (consumers may import from predictor)
 export { INTERVAL_FILTER, getSlotId };
@@ -100,10 +100,12 @@ function computeConfidence(feedCount: number): 'high' | 'medium' | 'low' {
 
 export function predictNextFeed(
   baby: BabyName,
-  allFeeds: FeedRecord[],
-  allSleeps: SleepRecord[],
+  rawFeeds: FeedRecord[],
+  rawSleeps: SleepRecord[],
   now: Date,
 ): Prediction | null {
+  const allFeeds = filterRecentFeeds(rawFeeds, now);
+  const allSleeps = filterRecentSleeps(rawSleeps, now);
   const profile = PROFILES[baby];
   const babyFeeds = allFeeds
     .filter((f) => f.baby === baby)
@@ -444,7 +446,7 @@ function predictFromProfile(
       },
       {
         ruleId: 'PROFILE_RECENCY',
-        text: 'Pondéré vers les 30 derniers jours',
+        text: 'Pondéré vers les 60 derniers jours',
         impact: `${profile.stats.typicalRangeMl[0]}–${profile.stats.typicalRangeMl[1]}ml`,
       },
     ],
@@ -455,44 +457,3 @@ function predictFromProfile(
   };
 }
 
-/**
- * Generate a full day schedule (morning to night) using data-driven intervals.
- * Exported for use by the Timeline component.
- */
-export interface DayProjection {
-  time: Date;
-  volumeMl: number;
-}
-
-export function projectDayFromData(
-  baby: BabyName,
-  allFeeds: FeedRecord[],
-  now: Date,
-): DayProjection[] {
-  const profile = PROFILES[baby];
-  const projected: DayProjection[] = [];
-
-  const morningSlot = profile.slots.find((s) => s.id === 'morning') ?? profile.slots[0];
-  const anchor = new Date(now);
-  anchor.setHours(morningSlot.hours[0], 0, 0, 0);
-
-  let current = anchor;
-  const firstSlot = profile.slots.find((s) => s.hours.includes(current.getHours())) ?? profile.slots[0];
-  const firstVol = computeSlotVolume(firstSlot.id, baby, allFeeds, now);
-  projected.push({ time: current, volumeMl: firstVol.meanMl });
-
-  for (let i = 0; i < 10; i++) {
-    const slot = profile.slots.find((s) => s.hours.includes(current.getHours())) ?? profile.slots[0];
-    const intervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
-    const next = new Date(current.getTime() + intervalH * 3_600_000);
-
-    if (next.getDate() !== now.getDate() || next.getHours() >= 23) break;
-
-    const nextSlot = profile.slots.find((s) => s.hours.includes(next.getHours())) ?? profile.slots[0];
-    const nextVol = computeSlotVolume(nextSlot.id, baby, allFeeds, now);
-    projected.push({ time: next, volumeMl: nextVol.meanMl });
-    current = next;
-  }
-
-  return projected;
-}

@@ -1,16 +1,32 @@
 /**
  * Recency weighting utilities.
  *
- * Data from the last 7 days gets 3× weight,
- * last 30 days gets 2× weight,
- * older data gets 1× weight.
+ * Data is hard-capped to the last 60 days (DATA_WINDOW_DAYS).
+ * Within that window: ≤7j = 3×, 8-21j = 2×, 22-60j = 1×.
  */
+
+import type { FeedRecord, SleepRecord } from '../types';
+
+/** Rolling window: only the last 60 days of data are used by engines. */
+export const DATA_WINDOW_DAYS = 60;
 
 export function recencyWeight(timestamp: Date, now: Date): number {
   const daysAgo = (now.getTime() - timestamp.getTime()) / 86_400_000;
   if (daysAgo <= 7) return 3;
-  if (daysAgo <= 30) return 2;
+  if (daysAgo <= 21) return 2;
   return 1;
+}
+
+/** Filter feeds to the last DATA_WINDOW_DAYS days. */
+export function filterRecentFeeds(feeds: FeedRecord[], now: Date): FeedRecord[] {
+  const cutoff = now.getTime() - DATA_WINDOW_DAYS * 86_400_000;
+  return feeds.filter((f) => f.timestamp.getTime() >= cutoff);
+}
+
+/** Filter sleeps to the last DATA_WINDOW_DAYS days. */
+export function filterRecentSleeps(sleeps: SleepRecord[], now: Date): SleepRecord[] {
+  const cutoff = now.getTime() - DATA_WINDOW_DAYS * 86_400_000;
+  return sleeps.filter((s) => s.startTime.getTime() >= cutoff);
 }
 
 export function weightedMedian(values: number[], weights: number[]): number {

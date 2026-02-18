@@ -150,17 +150,17 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
         })}
       </div>
 
-      {/* Feed-Sleep Insights — 1 per baby, always visible */}
+      {/* Feed-Sleep Insights — 1 per baby, collapsed by default */}
       {hasInsights && (
-        <div className="border-t border-gray-100 pt-3 space-y-2">
-          <div className="flex items-center gap-1.5">
+        <details className="border-t border-gray-100 pt-3">
+          <summary className="flex items-center gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
             <Lightbulb className="text-amber-400" size={14} />
             <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">
               Observations repas & sommeil
             </span>
-          </div>
+          </summary>
 
-          <div className="space-y-2">
+          <div className="space-y-2 mt-2">
             {([
               { baby: 'colette' as BabyName, insight: coletteInsight },
               { baby: 'isaure' as BabyName, insight: isaureInsight },
@@ -192,19 +192,19 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
               );
             })}
           </div>
-        </div>
+        </details>
       )}
 
-      {/* Repères bébé de 6 mois — always visible */}
-      <div className="border-t border-gray-100 pt-3 space-y-2">
-        <div className="flex items-center gap-1.5">
+      {/* Repères bébé de 6 mois — collapsed by default */}
+      <details className="border-t border-gray-100 pt-3">
+        <summary className="flex items-center gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
           <BookOpen className="text-indigo-400" size={14} />
           <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">
             Repères bébé de 6 mois
           </span>
-        </div>
+        </summary>
 
-        <div className="space-y-2">
+        <div className="space-y-2 mt-2">
           {facts.map((fact) => (
             <div key={fact.id} className="bg-gray-50 rounded-lg p-3 space-y-1.5">
               <div className="flex items-center gap-2">
@@ -221,7 +221,7 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
             </div>
           ))}
         </div>
-      </div>
+      </details>
     </div>
   );
 }

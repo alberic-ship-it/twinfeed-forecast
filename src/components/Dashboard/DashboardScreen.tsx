@@ -5,8 +5,6 @@ import { useStore } from '../../store';
 import { usePredictions } from '../../hooks/usePredictions';
 import { generateRecommendations } from '../../data/recommendations';
 import { BabyCard } from '../BabyCard/BabyCard';
-import { Timeline } from '../Timeline/Timeline';
-import { TwinsSync } from '../TwinsSync/TwinsSync';
 import { AlertsList } from '../Alerts/AlertsList';
 import { SleepPanel } from '../Sleep/SleepPanel';
 import { Recommendations } from '../Recommendations/Recommendations';
@@ -17,12 +15,10 @@ import type { BabyName } from '../../types';
 export function DashboardScreen() {
   const {
     predictions,
-    syncStatus,
     alerts,
     patterns,
     sleepAnalyses,
     feeds,
-    sleeps,
     lastUpdated,
     refreshPredictions,
   } = usePredictions();
@@ -35,7 +31,7 @@ export function DashboardScreen() {
   const now = new Date();
 
   // Recommendations
-  const recommendations = generateRecommendations(feeds, patterns, predictions, syncStatus);
+  const recommendations = generateRecommendations(feeds, patterns, predictions);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -77,9 +73,6 @@ export function DashboardScreen() {
       </header>
 
       <main className="max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4 pb-8">
-        {/* Timeline */}
-        <Timeline predictions={predictions} feeds={feeds} sleeps={sleeps} sleepAnalyses={sleepAnalyses} />
-
         {/* Quick log */}
         <QuickLog />
 
@@ -92,9 +85,6 @@ export function DashboardScreen() {
             <BabyCard key={baby} baby={baby} prediction={predictions[baby]} />
           ))}
         </div>
-
-        {/* Twins sync */}
-        <TwinsSync syncStatus={syncStatus} />
 
         {/* Sleep log + panel */}
         <SleepLog />

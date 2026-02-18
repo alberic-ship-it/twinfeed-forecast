@@ -1,4 +1,4 @@
-import { Lightbulb, BookOpen, Baby, Moon, Users } from 'lucide-react';
+import { Lightbulb, BookOpen, Baby, Moon } from 'lucide-react';
 import type { Recommendation } from '../../data/recommendations';
 
 interface RecommendationsProps {
@@ -10,7 +10,6 @@ const CATEGORY_ICONS = {
   feeding: Baby,
   sleep: Moon,
   development: BookOpen,
-  twins: Users,
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -18,23 +17,22 @@ const CATEGORY_LABELS: Record<string, string> = {
   feeding: 'Alimentation',
   sleep: 'Sommeil',
   development: 'Développement',
-  twins: 'Jumelles',
 };
 
 export function Recommendations({ recommendations }: RecommendationsProps) {
   if (recommendations.length === 0) return null;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">
-      <h3 className="text-xs text-gray-400 uppercase tracking-wide">
+    <details className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4">
+      <summary className="text-xs text-gray-400 uppercase tracking-wide cursor-pointer list-none [&::-webkit-details-marker]:hidden">
         Recommandations
-      </h3>
-      <div className="space-y-2">
+      </summary>
+      <div className="space-y-2 mt-3">
         {recommendations.map((rec) => (
           <RecItem key={rec.id} rec={rec} />
         ))}
       </div>
-    </div>
+    </details>
   );
 }
 

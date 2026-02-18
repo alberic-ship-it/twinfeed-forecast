@@ -3,7 +3,6 @@ import { useStore, initData, syncFromServer } from '../store';
 
 export function usePredictions() {
   const predictions = useStore((s) => s.predictions);
-  const syncStatus = useStore((s) => s.syncStatus);
   const alerts = useStore((s) => s.alerts);
   const patterns = useStore((s) => s.patterns);
   const sleepAnalyses = useStore((s) => s.sleepAnalyses);
@@ -24,7 +23,6 @@ export function usePredictions() {
 
   return {
     predictions,
-    syncStatus,
     alerts,
     patterns,
     sleepAnalyses,

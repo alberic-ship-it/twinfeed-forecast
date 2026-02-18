@@ -8,7 +8,7 @@ import type {
   InsightConfidence,
 } from '../types';
 import { PROFILES, NIGHT_SLEEP } from '../data/knowledge';
-import { recencyWeight, weightedMedian, weightedAvg } from './recency';
+import { recencyWeight, weightedMedian, weightedAvg, filterRecentFeeds, filterRecentSleeps } from './recency';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
@@ -1103,10 +1103,12 @@ function computeScheduleRegularity(
 
 export function analyzeFeedSleepLinks(
   baby: BabyName,
-  allFeeds: FeedRecord[],
-  allSleeps: SleepRecord[],
+  rawFeeds: FeedRecord[],
+  rawSleeps: SleepRecord[],
   now: Date,
 ): FeedSleepAnalysis {
+  const allFeeds = filterRecentFeeds(rawFeeds, now);
+  const allSleeps = filterRecentSleeps(rawSleeps, now);
   const feeds = allFeeds.filter((f) => f.baby === baby);
   const sleeps = allSleeps
     .filter((s) => s.baby === baby)

@@ -6,7 +6,6 @@ import type {
   BabyName,
   BabyProfile,
   Prediction,
-  TwinsSyncStatus,
   Alert,
   DetectedPattern,
   FeedSleepAnalysis,
@@ -14,7 +13,6 @@ import type {
 import { PROFILES } from '../data/knowledge';
 import { parseCsv } from '../data/parser';
 import { predictNextFeed } from '../engine/predictor';
-import { computeSyncStatus } from '../engine/twins';
 import { generateAlerts } from '../engine/alerts';
 import { detectPatterns } from '../engine/patterns';
 import { analyzeFeedSleepLinks } from '../engine/feedSleepLinks';
@@ -28,7 +26,6 @@ interface Store {
   sleeps: SleepRecord[];
   profiles: Record<BabyName, BabyProfile>;
   predictions: Record<BabyName, Prediction | null>;
-  syncStatus: TwinsSyncStatus | null;
   alerts: Alert[];
   patterns: DetectedPattern[];
   feedSleepInsights: Record<BabyName, FeedSleepAnalysis | null>;
@@ -81,7 +78,6 @@ export const useStore = create<Store>((set, get) => ({
   sleeps: [],
   profiles: PROFILES,
   predictions: { colette: null, isaure: null },
-  syncStatus: null,
   alerts: [],
   patterns: [],
   feedSleepInsights: { colette: null, isaure: null },
@@ -161,8 +157,7 @@ export const useStore = create<Store>((set, get) => ({
 
     const colettePred = predictNextFeed('colette', feeds, sleeps, now);
     const isaurePred = predictNextFeed('isaure', feeds, sleeps, now);
-    const syncStatus = computeSyncStatus(colettePred, isaurePred, feeds);
-    const freshAlerts = generateAlerts(feeds, syncStatus).map((a) =>
+    const freshAlerts = generateAlerts(feeds).map((a) =>
       dismissedAlertIds.has(a.id) ? { ...a, dismissed: true } : a
     );
     const colettePatterns = detectPatterns('colette', feeds, sleeps, now);
@@ -172,7 +167,6 @@ export const useStore = create<Store>((set, get) => ({
 
     set({
       predictions: { colette: colettePred, isaure: isaurePred },
-      syncStatus,
       alerts: freshAlerts,
       patterns: [...colettePatterns, ...isaurePatterns],
       sleepAnalyses: { colette: coletteSleep, isaure: isaureSleep },
@@ -197,7 +191,6 @@ export const useStore = create<Store>((set, get) => ({
       feeds: [],
       sleeps: [],
       predictions: { colette: null, isaure: null },
-      syncStatus: null,
       alerts: [],
       patterns: [],
       feedSleepInsights: { colette: null, isaure: null },
