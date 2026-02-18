@@ -1,13 +1,16 @@
 import { differenceInMinutes, differenceInHours, subDays } from 'date-fns';
 import type { BabyName, FeedRecord, SleepRecord, DetectedPattern } from '../types';
 import { PROFILES } from '../data/knowledge';
+import { filterRecentFeeds, filterRecentSleeps } from './recency';
 
 export function detectPatterns(
   baby: BabyName,
-  allFeeds: FeedRecord[],
-  allSleeps: SleepRecord[],
+  rawFeeds: FeedRecord[],
+  rawSleeps: SleepRecord[],
   now: Date,
 ): DetectedPattern[] {
+  const allFeeds = filterRecentFeeds(rawFeeds, now);
+  const allSleeps = filterRecentSleeps(rawSleeps, now);
   const babyFeeds = allFeeds
     .filter((f) => f.baby === baby)
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());

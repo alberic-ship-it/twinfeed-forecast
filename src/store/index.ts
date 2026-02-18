@@ -47,6 +47,11 @@ interface Store {
 let seedFeedIds = new Set<string>();
 let seedSleepIds = new Set<string>();
 
+// Dirty-check: skip refresh if data hasn't changed and last refresh was recent
+let _lastRefreshKey = '';
+let _lastRefreshTime = 0;
+const REFRESH_DEBOUNCE_MS = 10_000; // 10s minimum between identical refreshes
+
 // Track dismissed alert IDs across refreshes — persisted in sessionStorage
 const DISMISSED_KEY = 'twinfeed-dismissed-alerts';
 function loadDismissed(): Set<string> {
@@ -154,6 +159,14 @@ export const useStore = create<Store>((set, get) => ({
   refreshPredictions: () => {
     const { feeds, sleeps } = get();
     const now = new Date();
+
+    // Skip if data hasn't changed and last refresh was recent
+    const refreshKey = `${feeds.length}|${sleeps.length}`;
+    if (refreshKey === _lastRefreshKey && now.getTime() - _lastRefreshTime < REFRESH_DEBOUNCE_MS) {
+      return;
+    }
+    _lastRefreshKey = refreshKey;
+    _lastRefreshTime = now.getTime();
 
     const colettePred = predictNextFeed('colette', feeds, sleeps, now);
     const isaurePred = predictNextFeed('isaure', feeds, sleeps, now);

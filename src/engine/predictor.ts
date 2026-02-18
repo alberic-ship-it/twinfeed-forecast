@@ -92,9 +92,17 @@ function getSlotForHour(hour: number, baby: BabyName) {
   return profile.slots.find((s) => s.hours.includes(hour)) ?? profile.slots[0];
 }
 
-function computeConfidence(feedCount: number): 'high' | 'medium' | 'low' {
-  if (feedCount >= 50) return 'high';
-  if (feedCount >= 20) return 'medium';
+/** Minimum interval (minutes) to prevent infinite while-loops on bad data. */
+const MIN_INTERVAL_MIN = 30;
+
+function safeIntervalMin(intervalH: number): number {
+  return Math.max(MIN_INTERVAL_MIN, Math.round(intervalH * 60));
+}
+
+function computeConfidence(weights: number[]): 'high' | 'medium' | 'low' {
+  const totalWeight = weights.reduce((s, w) => s + w, 0);
+  if (totalWeight >= 100) return 'high';
+  if (totalWeight >= 40) return 'medium';
   return 'low';
 }
 
@@ -111,9 +119,25 @@ export function predictNextFeed(
     .filter((f) => f.baby === baby)
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
+  // --- Per-prediction slot cache (avoids redundant O(n) scans) ---
+  const _intervalCache = new Map<string, number>();
+  const _volumeCache = new Map<string, { meanMl: number; stdMl: number }>();
+  const cachedInterval = (slotId: string) => {
+    if (!_intervalCache.has(slotId)) {
+      _intervalCache.set(slotId, computeSlotInterval(slotId, baby, allFeeds, now));
+    }
+    return _intervalCache.get(slotId)!;
+  };
+  const cachedVolume = (slotId: string) => {
+    if (!_volumeCache.has(slotId)) {
+      _volumeCache.set(slotId, computeSlotVolume(slotId, baby, allFeeds, now));
+    }
+    return _volumeCache.get(slotId)!;
+  };
+
   // Fallback: no feed data → prediction based on hardcoded profiles
   if (babyFeeds.length === 0) {
-    return predictFromProfile(baby, allFeeds, now);
+    return predictFromProfile(baby, allFeeds, now, cachedInterval, cachedVolume);
   }
 
   const lastFeed = babyFeeds[babyFeeds.length - 1];
@@ -123,7 +147,7 @@ export function predictNextFeed(
   // No manual entry ≠ baby hasn't eaten.
   const hoursSinceLastFeed = (now.getTime() - lastFeed.timestamp.getTime()) / (1000 * 60 * 60);
   if (hoursSinceLastFeed >= profile.stats.p90H) {
-    return predictFromProfile(baby, allFeeds, now);
+    return predictFromProfile(baby, allFeeds, now, cachedInterval, cachedVolume);
   }
 
   const patterns = detectPatterns(baby, allFeeds, allSleeps, now);
@@ -133,7 +157,7 @@ export function predictNextFeed(
   // Estimate target hour to pick the right slot, then use data-driven interval
   const roughHour = (lastFeed.timestamp.getHours() + Math.round(profile.stats.medianIntervalH)) % 24;
   const targetSlot = getSlotForHour(roughHour, baby);
-  let intervalH = computeSlotInterval(targetSlot.id, baby, allFeeds, now);
+  let intervalH = cachedInterval(targetSlot.id);
 
   // Apply pattern modifiers (COMPENSATION -25%, CLUSTER +30%, etc.)
   for (const pattern of patterns) {
@@ -172,8 +196,7 @@ export function predictNextFeed(
   // If predicted time is in the past, advance by data-driven slot intervals until future.
   while (predictedTime < now) {
     const slot = getSlotForHour(predictedTime.getHours(), baby);
-    const slotIntervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
-    predictedTime = addMinutes(predictedTime, Math.round(slotIntervalH * 60));
+    predictedTime = addMinutes(predictedTime, safeIntervalMin(cachedInterval(slot.id)));
   }
 
   // --- POST-NAP ADJUSTMENT ---
@@ -183,7 +206,6 @@ export function predictNextFeed(
   const recentNap = findRecentNapWakeUp(baby, allSleeps, now, 480);
   if (recentNap?.endTime) {
     const postNapLatency = computePostNapFeedLatency(baby, allFeeds, allSleeps, now);
-    // Default: 30 min post-nap if insufficient historical data
     const latencyMin = postNapLatency ?? 30;
     let postNapTime = addMinutes(recentNap.endTime, latencyMin);
 
@@ -197,8 +219,7 @@ export function predictNextFeed(
       // prediction chain on the nap wake-up.
       while (postNapTime < now) {
         const slot = getSlotForHour(postNapTime.getHours(), baby);
-        const slotIntervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
-        postNapTime = addMinutes(postNapTime, Math.round(slotIntervalH * 60));
+        postNapTime = addMinutes(postNapTime, safeIntervalMin(cachedInterval(slot.id)));
       }
 
       if (postNapTime < predictedTime) {
@@ -225,7 +246,7 @@ export function predictNextFeed(
 
   // --- VOLUME PREDICTION ---
   const volumeSlotId = getSlotId(predictedTime.getHours());
-  const vol = computeSlotVolume(volumeSlotId, baby, allFeeds, now);
+  const vol = cachedVolume(volumeSlotId);
   let predictedMl = vol.meanMl;
   const stdMl = vol.stdMl;
 
@@ -262,11 +283,9 @@ export function predictNextFeed(
   }
 
   // Compensation: if last feed was small/large, adjust volume
-  // (stacks with COMPENSATION pattern which adjusts timing)
+  // Cap total volume modifiers to ±50% of slot mean to avoid extreme predictions.
   if (lastFeed.type === 'bottle' && lastFeed.volumeMl > 0) {
-    const lastSlotVol = computeSlotVolume(
-      getSlotId(lastFeed.timestamp.getHours()), baby, allFeeds, now,
-    );
+    const lastSlotVol = cachedVolume(getSlotId(lastFeed.timestamp.getHours()));
     const ratio = lastFeed.volumeMl / lastSlotVol.meanMl;
     if (ratio < 0.7) {
       predictedMl *= 1.10;
@@ -285,6 +304,8 @@ export function predictNextFeed(
     }
   }
 
+  // Cap volume to ±50% of slot mean
+  predictedMl = Math.max(vol.meanMl * 0.5, Math.min(predictedMl, vol.meanMl * 1.5));
   predictedMl = Math.round(predictedMl);
   const volume: VolumePrediction = {
     predictedMl,
@@ -293,12 +314,14 @@ export function predictNextFeed(
     p90Ml: predictedMl + Math.round(stdMl),
   };
 
+  const feedWeights = babyFeeds.map((f) => recencyWeight(f.timestamp, now));
+
   return {
     baby,
     timing,
     volume,
     explanations,
-    confidence: computeConfidence(babyFeeds.length),
+    confidence: computeConfidence(feedWeights),
     slot: getSlotId(predictedTime.getHours()),
     generatedAt: now,
   };
@@ -394,6 +417,8 @@ function predictFromProfile(
   baby: BabyName,
   allFeeds: FeedRecord[],
   now: Date,
+  cachedInterval: (slotId: string) => number,
+  cachedVolume: (slotId: string) => { meanMl: number; stdMl: number },
 ): Prediction {
   const profile = PROFILES[baby];
 
@@ -409,13 +434,12 @@ function predictFromProfile(
   let predictedTime = anchorTime;
   while (predictedTime <= now) {
     const slot = getSlotForHour(predictedTime.getHours(), baby);
-    const intervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
-    predictedTime = addMinutes(predictedTime, Math.round(intervalH * 60));
+    predictedTime = addMinutes(predictedTime, safeIntervalMin(cachedInterval(slot.id)));
   }
 
   const nextSlot = getSlotForHour(predictedTime.getHours(), baby);
-  const nextIntervalH = computeSlotInterval(nextSlot.id, baby, allFeeds, now);
-  const vol = computeSlotVolume(nextSlot.id, baby, allFeeds, now);
+  const nextIntervalH = cachedInterval(nextSlot.id);
+  const vol = cachedVolume(nextSlot.id);
   const confidenceMinutes = Math.round(nextIntervalH * 20);
   const slotLabel = SLOT_LABELS[nextSlot.id] ?? nextSlot.id;
 

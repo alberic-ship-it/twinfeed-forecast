@@ -329,18 +329,19 @@ function computeClusterThenSleep(
   sleeps: SleepRecord[],
   now: Date,
 ): FeedSleepInsight | null {
-  // Detect cluster episodes: 3+ feeds within 180 min window
+  // Detect cluster episodes: 3+ feeds within 180 min window (O(n) sliding window)
   const clusterEndTimes: Date[] = [];
+  const sortedFeeds = [...allFeeds].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-  for (let i = 0; i < allFeeds.length; i++) {
-    const windowStart = allFeeds[i].timestamp;
-    const windowEnd = new Date(windowStart.getTime() + 180 * 60_000);
-    const feedsInWindow = allFeeds.filter(
-      (f) => f.timestamp >= windowStart && f.timestamp <= windowEnd,
-    );
-    if (feedsInWindow.length >= 3) {
-      const lastInCluster = feedsInWindow[feedsInWindow.length - 1].timestamp;
-      // Avoid duplicate cluster detections (skip if too close to previous)
+  let windowStart = 0;
+  for (let windowEnd = 0; windowEnd < sortedFeeds.length; windowEnd++) {
+    // Shrink window from the left until it fits within 180 min
+    while (sortedFeeds[windowEnd].timestamp.getTime() - sortedFeeds[windowStart].timestamp.getTime() > 180 * 60_000) {
+      windowStart++;
+    }
+    const count = windowEnd - windowStart + 1;
+    if (count >= 3) {
+      const lastInCluster = sortedFeeds[windowEnd].timestamp;
       const prev = clusterEndTimes[clusterEndTimes.length - 1];
       if (!prev || differenceInMinutes(lastInCluster, prev) > 60) {
         clusterEndTimes.push(lastInCluster);
@@ -409,7 +410,10 @@ function computeHourlyContextInsights(
     const morningNaps = naps.filter((s) => s.startTime.getHours() >= 8 && s.startTime.getHours() < 12);
 
     if (morningBottles.length >= 3 && morningNaps.length >= 3) {
-      const medVol = median(morningBottles.map((f) => f.volumeMl));
+      const medVol = weightedMedian(
+        morningBottles.map((f) => f.volumeMl),
+        morningBottles.map((f) => recencyWeight(f.timestamp, now)),
+      );
       const bigMorning = morningNaps.filter((n) => {
         const fb = findLastFeedBefore(bottles, n.startTime, 180);
         return fb && fb.volumeMl > medVol;
@@ -420,8 +424,8 @@ function computeHourlyContextInsights(
       });
 
       if (bigMorning.length >= 2 && smallMorning.length >= 2) {
-        const avgBig = Math.round(avg(bigMorning.map((n) => n.durationMin)));
-        const avgSmall = Math.round(avg(smallMorning.map((n) => n.durationMin)));
+        const avgBig = Math.round(weightedAvg(bigMorning.map((n) => n.durationMin), bigMorning.map((n) => recencyWeight(n.startTime, now))));
+        const avgSmall = Math.round(weightedAvg(smallMorning.map((n) => n.durationMin), smallMorning.map((n) => recencyWeight(n.startTime, now))));
         const lastBottle = morningBottles[morningBottles.length - 1];
 
         results.push({
@@ -446,9 +450,12 @@ function computeHourlyContextInsights(
         const fb = findLastFeedBefore(bottles, nap.startTime, 180);
         if (fb) latencies.push(differenceInMinutes(nap.startTime, fb.timestamp));
       }
-      const avgLatency = latencies.length >= 2 ? Math.round(avg(latencies)) : null;
-      const avgMidday = Math.round(avg(middayNaps.map((n) => n.durationMin)));
-      const avgOther = otherNaps.length >= 2 ? Math.round(avg(otherNaps.map((n) => n.durationMin))) : null;
+      const avgLatency = latencies.length >= 2 ? Math.round(weightedAvg(
+        latencies,
+        middayNaps.filter((n) => findLastFeedBefore(bottles, n.startTime, 180)).map((n) => recencyWeight(n.startTime, now)),
+      )) : null;
+      const avgMidday = Math.round(weightedAvg(middayNaps.map((n) => n.durationMin), middayNaps.map((n) => recencyWeight(n.startTime, now))));
+      const avgOther = otherNaps.length >= 2 ? Math.round(weightedAvg(otherNaps.map((n) => n.durationMin), otherNaps.map((n) => recencyWeight(n.startTime, now)))) : null;
 
       let obs = `La sieste de midi de ${name} dure en moyenne ${avgMidday}min`;
       if (avgOther !== null) obs += ` (vs ${avgOther}min pour les autres siestes)`;
@@ -479,10 +486,10 @@ function computeHourlyContextInsights(
 
     const dayCounts = [...napsByDay.values()];
     if (dayCounts.length >= 3) {
-      const avgNaps = Math.round(avg(dayCounts) * 10) / 10;
+      const avgNaps = Math.round(avg(dayCounts) * 10) / 10; // day counts aren't timestamped, unweighted is fine
       let obs = `${name} fait en moyenne ${avgNaps} siestes par jour`;
       if (thirdNapDurations.length >= 2) {
-        const avg3rd = Math.round(avg(thirdNapDurations));
+        const avg3rd = Math.round(avg(thirdNapDurations)); // same: per-day stat, not timestamped
         obs += `. La 3e sieste dure ~${avg3rd}min en moyenne`;
       }
       obs += '.';
@@ -515,7 +522,7 @@ function computeHourlyContextInsights(
         }
       }
       if (shortPmDays.length >= 2 && longPmDays.length >= 2) {
-        const avgShort = Math.round(avg(shortPmDays));
+        const avgShort = Math.round(avg(shortPmDays)); // bedtime minutes, no timestamp for weighting
         const avgLong = Math.round(avg(longPmDays));
         const diff = avgLong - avgShort;
         if (Math.abs(diff) >= 5) {
@@ -1003,7 +1010,10 @@ function computeMorningFeedMorningNap(
 
   if (morningBottles.length < 5 || morningNaps.length < 5) return null;
 
-  const medVol = median(morningBottles.map((f) => f.volumeMl));
+  const medVol = weightedMedian(
+    morningBottles.map((f) => f.volumeMl),
+    morningBottles.map((f) => recencyWeight(f.timestamp, now)),
+  );
 
   const pairs: { vol: number; napDur: number; time: Date }[] = [];
   for (const nap of morningNaps) {
