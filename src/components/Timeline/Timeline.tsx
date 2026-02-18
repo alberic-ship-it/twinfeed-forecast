@@ -1,6 +1,6 @@
 import { format, differenceInMinutes } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import type { BabyName, Prediction, FeedRecord, SleepRecord } from '../../types';
+import type { BabyName, BabyProfile, TimeSlot, Prediction, FeedRecord, SleepRecord } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
 import { BABY_COLORS, PROFILES, DEFAULT_SLEEP } from '../../data/knowledge';
 import { projectDayFromData, computeSlotInterval, computeSlotVolume } from '../../engine/predictor';
@@ -34,6 +34,19 @@ function isToday(date: Date, now: Date): boolean {
 interface ProjectedFeed { time: Date; volumeMl: number }
 interface ProjectedNap { time: Date; durationMin: number; isNight?: boolean }
 
+/**
+ * Build a coherent list of projected feeds for the day.
+ *
+ * Coherence rules:
+ * 1. Real feeds ALWAYS take priority — any projection within 90 min of a
+ *    real feed is removed.
+ * 2. No projection can fall during a sleep (real or projected nap).
+ * 3. Future projections chain from the engine's prediction (nap-aware),
+ *    and when a projection would land during a nap it's pushed to
+ *    napEnd + 30 min.
+ * 4. Past projections are anchored on real feeds: we only fill gaps
+ *    between real feeds, not show a full mechanical chain.
+ */
 function projectFeedsForDay(
   baby: BabyName, pred: Prediction, now: Date, allFeeds: FeedRecord[],
   todaySleeps: SleepRecord[], projectedNaps: ProjectedNap[],
@@ -43,15 +56,15 @@ function projectFeedsForDay(
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date(now);
   todayEnd.setHours(23, 59, 59, 999);
-  const todayFeeds = allFeeds.filter(
-    (f) => f.baby === baby && f.timestamp >= todayStart && f.timestamp <= todayEnd,
-  );
+  const todayFeeds = allFeeds
+    .filter((f) => f.baby === baby && f.timestamp >= todayStart && f.timestamp <= todayEnd)
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
   // Check if a projected feed is too close to a real feed
   const tooCloseToRealFeed = (time: Date) =>
     todayFeeds.some((f) => Math.abs(f.timestamp.getTime() - time.getTime()) < 90 * 60_000);
 
-  // Check if a projected feed falls during a sleep (real or projected nap)
+  // Check if a time falls during a sleep (real or projected nap)
   const duringASleep = (time: Date) => {
     const t = time.getTime();
     for (const s of todaySleeps) {
@@ -70,13 +83,37 @@ function projectFeedsForDay(
 
   const shouldFilter = (time: Date) => tooCloseToRealFeed(time) || duringASleep(time);
 
-  // Past projections: mechanical chain from morning
-  const dayProjections = projectDayFromData(baby, allFeeds, now);
-  const pastProjections = dayProjections
-    .filter((p) => p.time < now)
-    .filter((p) => !shouldFilter(p.time));
+  // ── Past projections: only fill gaps between real feeds ──
+  // Instead of a mechanical chain from morning, we project forward from
+  // each real feed and only keep projections that don't collide with the
+  // next real feed. If there are no real feeds, fall back to mechanical.
+  const pastProjections: ProjectedFeed[] = [];
+  if (todayFeeds.length > 0) {
+    // Fill the gap BEFORE the first real feed (from morning)
+    const morningSlot = profile.slots.find((s) => s.id === 'morning') ?? profile.slots[0];
+    const morningAnchor = new Date(now);
+    morningAnchor.setHours(morningSlot.hours[0], 0, 0, 0);
+    fillGap(morningAnchor, todayFeeds[0].timestamp, baby, allFeeds, now, profile, pastProjections, shouldFilter);
 
-  // Future projections: chain from the prediction (nap-aware)
+    // Fill gaps BETWEEN consecutive real feeds
+    for (let i = 0; i < todayFeeds.length - 1; i++) {
+      fillGap(todayFeeds[i].timestamp, todayFeeds[i + 1].timestamp, baby, allFeeds, now, profile, pastProjections, shouldFilter);
+    }
+
+    // Fill gap from last real feed to now
+    const lastFeed = todayFeeds[todayFeeds.length - 1];
+    fillGap(lastFeed.timestamp, now, baby, allFeeds, now, profile, pastProjections, shouldFilter);
+  } else {
+    // No real feeds today — use mechanical projection
+    const dayProjections = projectDayFromData(baby, allFeeds, now);
+    for (const p of dayProjections) {
+      if (p.time < now && !shouldFilter(p.time)) {
+        pastProjections.push(p);
+      }
+    }
+  }
+
+  // ── Future projections: chain from the prediction (nap-aware) ──
   const futureProjections: ProjectedFeed[] = [];
   let current = pred.timing.predictedTime;
   if (isToday(current, now)) {
@@ -109,11 +146,38 @@ function projectFeedsForDay(
   return [...pastProjections, ...futureProjections];
 }
 
+/**
+ * Fill a time gap with projected feeds by chaining from `start` with
+ * slot intervals. Only adds projections that are before `end` and pass
+ * the filter.
+ */
+function fillGap(
+  start: Date, end: Date, baby: BabyName, allFeeds: FeedRecord[],
+  now: Date, profile: BabyProfile,
+  out: ProjectedFeed[],
+  shouldFilter: (time: Date) => boolean,
+) {
+  let cursor = start;
+  for (let i = 0; i < 10; i++) {
+    const slot = profile.slots.find((s: TimeSlot) => s.hours.includes(cursor.getHours())) ?? profile.slots[0];
+    const intervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
+    const next = new Date(cursor.getTime() + intervalH * 3_600_000);
+    if (next >= end) break;
+    if (!shouldFilter(next)) {
+      const nextSlot = profile.slots.find((s: TimeSlot) => s.hours.includes(next.getHours())) ?? profile.slots[0];
+      const nextVol = computeSlotVolume(nextSlot.id, baby, allFeeds, now);
+      out.push({ time: next, volumeMl: nextVol.meanMl });
+    }
+    cursor = next;
+  }
+}
+
 /** Find the end time of the nap that contains a given time */
 function findNapEndAfter(
   time: Date, realSleeps: SleepRecord[], projectedNaps: ProjectedNap[],
 ): Date | null {
   const t = time.getTime();
+  // Prioritize real sleeps over projected naps
   for (const s of realSleeps) {
     const start = s.startTime.getTime();
     const end = s.endTime ? s.endTime.getTime() : start + s.durationMin * 60_000;
@@ -148,15 +212,30 @@ function projectNapsForDay(
     });
   };
 
-  // Past projected naps
+  // Past projected naps — only show if no real nap exists nearby.
+  // When a real nap replaces a projected one (even at a different time),
+  // we suppress projected naps in the same broad window to avoid doubles.
   const pastNaps: ProjectedNap[] = [];
-  for (const t of defaults.bestNapTimes) {
-    const napTime = new Date(now);
-    napTime.setHours(Math.floor(t.startH), (t.startH % 1) * 60, 0, 0);
-    const napEnd = new Date(napTime.getTime() + napDuration * 60_000);
-    if (napEnd >= now) continue;
-    if (!tooCloseToReal(napTime, napDuration)) {
-      pastNaps.push({ time: napTime, durationMin: napDuration });
+  const realNapCount = todaySleeps.filter(
+    (s) => s.startTime.getHours() >= 6 && s.startTime.getHours() < 21,
+  ).length;
+  // Only show past projected naps for "slots" not covered by real naps.
+  // If we have as many (or more) real naps as default windows that have
+  // elapsed, don't project any past naps at all.
+  const elapsedWindows = defaults.bestNapTimes.filter(
+    (t) => (now.getHours() + now.getMinutes() / 60) >= t.endH,
+  ).length;
+  const shouldShowPastProjected = realNapCount < elapsedWindows;
+
+  if (shouldShowPastProjected) {
+    for (const t of defaults.bestNapTimes) {
+      const napTime = new Date(now);
+      napTime.setHours(Math.floor(t.startH), (t.startH % 1) * 60, 0, 0);
+      const napEnd = new Date(napTime.getTime() + napDuration * 60_000);
+      if (napEnd >= now) continue;
+      if (!tooCloseToReal(napTime, napDuration)) {
+        pastNaps.push({ time: napTime, durationMin: napDuration });
+      }
     }
   }
 
@@ -346,17 +425,7 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
                   <div className="relative h-5 sm:h-6">
                     <div className="absolute inset-0 bg-gray-50 rounded-b border border-t-0 border-gray-100" />
 
-                    {/* Real feeds */}
-                    {babyFeeds.map((f) => (
-                      <div
-                        key={f.id}
-                        className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full -ml-1 z-[3]"
-                        style={{ left: `${hourToPercent(f.timestamp)}%`, backgroundColor: color }}
-                        title={`${format(f.timestamp, 'HH:mm', { locale: fr })} — ${f.volumeMl}ml`}
-                      />
-                    ))}
-
-                    {/* Projected feeds */}
+                    {/* Projected feeds (below real feeds) */}
                     {projFeeds.map((pf, i) => {
                       const isPast = pf.time < now;
                       const isNext = pf === nextFeed;
@@ -364,7 +433,7 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
                       return (
                         <div key={`pf-${i}`}>
                           <div
-                            className={`absolute top-1/2 -translate-y-1/2 rounded-full border-2 z-[4] ${isNext ? 'w-3 h-3 -ml-1.5' : 'w-2 h-2 -ml-1'}`}
+                            className={`absolute top-1/2 -translate-y-1/2 rounded-full border-2 z-[3] ${isNext ? 'w-3 h-3 -ml-1.5' : 'w-2 h-2 -ml-1'}`}
                             style={{
                               left: `${pct}%`, borderColor: color,
                               backgroundColor: 'white', opacity: isPast ? 0.3 : 1,
@@ -373,7 +442,7 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
                           />
                           {isNext && (
                             <span
-                              className="absolute bottom-0 text-[8px] font-semibold z-[5] -translate-x-1/2"
+                              className="absolute bottom-0 text-[8px] font-semibold z-[4] -translate-x-1/2"
                               style={{ left: `${pct}%`, color }}
                             >
                               {format(pf.time, 'HH:mm')}
@@ -382,6 +451,16 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
                         </div>
                       );
                     })}
+
+                    {/* Real feeds (always on top of projections) */}
+                    {babyFeeds.map((f) => (
+                      <div
+                        key={f.id}
+                        className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full -ml-1 z-[5]"
+                        style={{ left: `${hourToPercent(f.timestamp)}%`, backgroundColor: color }}
+                        title={`${format(f.timestamp, 'HH:mm', { locale: fr })} — ${f.volumeMl}ml`}
+                      />
+                    ))}
 
                     {/* Now marker */}
                     <div className="absolute inset-y-0 w-0.5 bg-red-400 z-[6] rounded-full" style={{ left: `${nowPct}%` }} />
