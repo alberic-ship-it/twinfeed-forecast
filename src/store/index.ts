@@ -38,6 +38,7 @@ interface Store {
   addFeeds: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
   logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number) => void;
   logSleep: (baby: BabyName, durationMin: number, endTime?: Date) => void;
+  deleteSleep: (id: string) => void;
   refreshPredictions: () => void;
   dismissAlert: (id: string) => void;
   reset: () => void;
@@ -154,6 +155,17 @@ export const useStore = create<Store>((set, get) => ({
 
     // Push to server
     pushEntries([], [sleep]).catch(() => {});
+  },
+
+  deleteSleep: (id) => {
+    const { sleeps } = get();
+    const filtered = sleeps.filter((s) => s.id !== id);
+    if (filtered.length === sleeps.length) return; // not found
+    set({ sleeps: filtered });
+    // Force refresh even if length changed
+    _lastRefreshKey = '';
+    get().refreshPredictions();
+    _refreshInsights(get, set);
   },
 
   refreshPredictions: () => {

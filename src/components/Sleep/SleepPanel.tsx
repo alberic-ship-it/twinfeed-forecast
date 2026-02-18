@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Lightbulb, BookOpen, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Lightbulb, BookOpen, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
 import type { BabyName, FeedSleepAnalysis, InsightConfidence } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
+import { useStore } from '../../store';
 import { PROFILES, getHourlyFacts } from '../../data/knowledge';
 
 interface SleepPanelProps {
@@ -78,6 +79,9 @@ function pickHourlyInsight(insights: FeedSleepAnalysis | null, hour: number) {
 }
 
 export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProps) {
+  const deleteSleep = useStore((s) => s.deleteSleep);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
   const coletteInsight = useMemo(() => pickHourlyInsight(feedSleepInsights.colette, hour), [feedSleepInsights.colette, hour]);
   const isaureInsight = useMemo(() => pickHourlyInsight(feedSleepInsights.isaure, hour), [feedSleepInsights.isaure, hour]);
   const hasInsights = coletteInsight || isaureInsight;
@@ -141,12 +145,18 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                 </div>
               )}
 
-              {/* Naps done — compact badge */}
+              {/* Naps done — enriched card */}
               {analysis.sleepStatus === 'naps_done' && (
-                <div className="flex items-center gap-1.5 bg-green-50 rounded-lg px-2.5 py-1.5">
-                  <CheckCircle className="text-green-500 shrink-0" size={12} />
-                  <p className="text-xs text-green-700 font-medium">
+                <div className="bg-green-50 rounded-lg p-2.5">
+                  <div className="flex items-center gap-1">
+                    <CheckCircle className="text-green-500" size={11} />
+                    <p className="text-[11px] text-green-500 uppercase tracking-wide font-medium">Siestes terminées</p>
+                  </div>
+                  <p className="text-xl sm:text-2xl font-bold text-green-700 leading-tight">
                     {analysis.napsToday} sieste{analysis.napsToday > 1 ? 's' : ''}
+                  </p>
+                  <p className="text-[11px] text-green-400 mt-0.5">
+                    {formatDuration(analysis.totalSleepToday)} de sommeil · moy. {analysis.napsToday > 0 ? Math.round(analysis.totalSleepToday / analysis.napsToday) : 0} min
                   </p>
                 </div>
               )}
@@ -176,6 +186,43 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                   <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-medium ${QUALITY_COLORS[analysis.sleepQuality]}`}>
                     {analysis.sleepQuality === 'good' ? 'Bon sommeil' : analysis.sleepQuality === 'fair' ? 'Sommeil moyen' : 'Sommeil insuffisant'}
                   </span>
+                </div>
+              )}
+
+              {/* Today's nap list with delete */}
+              {analysis.todayNapRecords.length > 0 && (
+                <div className="space-y-0.5">
+                  {analysis.todayNapRecords.map((nap) => (
+                    <div key={nap.id} className="flex items-center justify-between group">
+                      <p className="text-[11px] text-gray-400">
+                        {formatTime(nap.startTime)} · {nap.durationMin} min
+                      </p>
+                      {confirmDelete === nap.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => { deleteSleep(nap.id); setConfirmDelete(null); }}
+                            className="text-[10px] text-red-500 font-medium px-1.5 py-0.5 rounded bg-red-50 hover:bg-red-100 active:bg-red-200 transition-colors"
+                          >
+                            Suppr
+                          </button>
+                          <button
+                            onClick={() => setConfirmDelete(null)}
+                            className="text-[10px] text-gray-400 px-1 py-0.5"
+                          >
+                            Non
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDelete(nap.id)}
+                          className="p-1 text-gray-300 hover:text-red-400 active:text-red-500 transition-colors"
+                          title="Supprimer"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

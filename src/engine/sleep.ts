@@ -31,6 +31,8 @@ export interface SleepAnalysis {
   expectedDaySleepMin: number;
   /** Quality of today's day sleep relative to expected */
   sleepQuality: SleepQuality;
+  /** Today's nap records (for display/deletion in UI) */
+  todayNapRecords: SleepRecord[];
 }
 
 // ── Helpers ──
@@ -422,5 +424,6 @@ export function analyzeSleep(
     sleepStatus,
     expectedDaySleepMin,
     sleepQuality,
+    todayNapRecords: todayNaps,
   };
 }
