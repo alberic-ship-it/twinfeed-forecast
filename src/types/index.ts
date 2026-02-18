@@ -22,7 +22,8 @@ export type PatternId =
   | 'EVENING'
   | 'NIGHT_LIGHT'
   | 'POST_NAP'
-  | 'GROWTH';
+  | 'GROWTH'
+  | 'BREAST_RATIO_SHIFT';
 
 export type Screen = 'import' | 'dashboard' | 'insights';
 

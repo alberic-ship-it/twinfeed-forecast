@@ -20,15 +20,20 @@ export function detectPatterns(
   if (babyFeeds.length < 3) return patterns;
 
   // --- CLUSTER FEEDING ---
-  // ≥3 feeds in last 3 hours
+  // Breast-aware: ≥4 if all breast (breastfeeding clusters are more common),
+  // ≥3 otherwise (at least one bottle in the window).
   const recentFeeds = babyFeeds.filter(
     (f) => differenceInMinutes(now, f.timestamp) <= 180,
   );
-  if (recentFeeds.length >= 3) {
+  const allBreast = recentFeeds.length > 0 && recentFeeds.every((f) => f.type === 'breast');
+  const clusterThreshold = allBreast ? 4 : 3;
+  if (recentFeeds.length >= clusterThreshold) {
     patterns.push({
       id: 'CLUSTER',
       label: 'Cluster feeding',
-      description: '3+ repas en moins de 3h — l\'intervalle après sera probablement plus long',
+      description: allBreast
+        ? '4+ tétées en moins de 3h — l\'intervalle après sera probablement plus long'
+        : '3+ repas en moins de 3h — l\'intervalle après sera probablement plus long',
       baby,
       detectedAt: now,
       timingModifier: 1.30,
@@ -123,6 +128,31 @@ export function detectPatterns(
         detectedAt: now,
         timingModifier: 0.80,
         volumeModifier: 1.15,
+      });
+    }
+  }
+
+  // --- BREAST RATIO SHIFT ---
+  // If the proportion of breast feeds increased significantly over 48h vs 14d,
+  // it signals a rhythm change (more frequent, shorter feeds).
+  const allLast48h = babyFeeds.filter(
+    (f) => differenceInHours(now, f.timestamp) <= 48,
+  );
+  const allLast14d = babyFeeds.filter(
+    (f) => f.timestamp >= subDays(now, 14),
+  );
+  if (allLast48h.length >= 4 && allLast14d.length >= 10) {
+    const breastRatio48h = allLast48h.filter((f) => f.type === 'breast').length / allLast48h.length;
+    const breastRatio14d = allLast14d.filter((f) => f.type === 'breast').length / allLast14d.length;
+    // Trigger if 48h breast ratio is ≥20pp higher than 14d baseline
+    if (breastRatio48h - breastRatio14d >= 0.20) {
+      patterns.push({
+        id: 'BREAST_RATIO_SHIFT',
+        label: 'Plus de tétées',
+        description: 'Proportion de tétées en hausse sur 48h — intervalles potentiellement plus courts',
+        baby,
+        detectedAt: now,
+        timingModifier: 0.90,
       });
     }
   }

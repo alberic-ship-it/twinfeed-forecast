@@ -120,13 +120,15 @@ export function predictNextFeed(
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
   // --- Per-prediction slot cache (avoids redundant O(n) scans) ---
+  // Interval cache is keyed by "slotId|afterType" to support type-aware intervals
   const _intervalCache = new Map<string, number>();
   const _volumeCache = new Map<string, { meanMl: number; stdMl: number }>();
-  const cachedInterval = (slotId: string) => {
-    if (!_intervalCache.has(slotId)) {
-      _intervalCache.set(slotId, computeSlotInterval(slotId, baby, allFeeds, now));
+  const cachedInterval = (slotId: string, afterType?: 'bottle' | 'breast') => {
+    const key = afterType ? `${slotId}|${afterType}` : slotId;
+    if (!_intervalCache.has(key)) {
+      _intervalCache.set(key, computeSlotInterval(slotId, baby, allFeeds, now, afterType));
     }
-    return _intervalCache.get(slotId)!;
+    return _intervalCache.get(key)!;
   };
   const cachedVolume = (slotId: string) => {
     if (!_volumeCache.has(slotId)) {
@@ -154,10 +156,11 @@ export function predictNextFeed(
   const explanations: Explanation[] = [];
 
   // --- TIMING PREDICTION ---
-  // Estimate target hour to pick the right slot, then use data-driven interval
+  // Estimate target hour to pick the right slot, then use data-driven interval.
+  // Use type-aware interval: post-breast intervals are typically shorter.
   const roughHour = (lastFeed.timestamp.getHours() + Math.round(profile.stats.medianIntervalH)) % 24;
   const targetSlot = getSlotForHour(roughHour, baby);
-  let intervalH = cachedInterval(targetSlot.id);
+  let intervalH = cachedInterval(targetSlot.id, lastFeed.type);
 
   // Apply pattern modifiers (COMPENSATION -25%, CLUSTER +30%, etc.)
   for (const pattern of patterns) {
@@ -282,8 +285,9 @@ export function predictNextFeed(
     predictedMl *= adjV.midday_boost;
   }
 
-  // Compensation: if last feed was small/large, adjust volume
+  // Compensation: if last feed was small/large, adjust volume.
   // Cap total volume modifiers to ±50% of slot mean to avoid extreme predictions.
+  // Breast feeds: no volume data, so no compensation (neutral assumption).
   if (lastFeed.type === 'bottle' && lastFeed.volumeMl > 0) {
     const lastSlotVol = cachedVolume(getSlotId(lastFeed.timestamp.getHours()));
     const ratio = lastFeed.volumeMl / lastSlotVol.meanMl;
@@ -302,6 +306,12 @@ export function predictNextFeed(
         impact: '-10% volume',
       });
     }
+  } else if (lastFeed.type === 'breast') {
+    explanations.push({
+      ruleId: 'BREAST_NO_VOLUME',
+      text: 'Tétée précédente — volume non mesurable, projection standard',
+      impact: 'neutre',
+    });
   }
 
   // Cap volume to ±50% of slot mean
@@ -314,7 +324,11 @@ export function predictNextFeed(
     p90Ml: predictedMl + Math.round(stdMl),
   };
 
-  const feedWeights = babyFeeds.map((f) => recencyWeight(f.timestamp, now));
+  // Breast feeds provide less info (no volume) → count as 0.5× in confidence
+  const feedWeights = babyFeeds.map((f) => {
+    const w = recencyWeight(f.timestamp, now);
+    return f.type === 'breast' ? w * 0.5 : w;
+  });
 
   return {
     baby,
@@ -339,12 +353,17 @@ const SLOT_LABELS: Record<string, string> = {
  * Compute the weighted median interval for a specific time slot,
  * using real historical data with recency weighting.
  * Falls back to the slot's hardcoded interval if not enough data.
+ *
+ * When `afterType` is specified, only intervals where the preceding feed
+ * matches that type are used (post-breast vs post-bottle). Falls back to
+ * mixed intervals if the type-specific sample is too small (<3).
  */
 export function computeSlotInterval(
   slotId: string,
   baby: BabyName,
   allFeeds: FeedRecord[],
   now: Date,
+  afterType?: 'bottle' | 'breast',
 ): number {
   const profile = PROFILES[baby];
   const slot = profile.slots.find((s) => s.id === slotId) ?? profile.slots[0];
@@ -354,24 +373,37 @@ export function computeSlotInterval(
 
   if (babyFeeds.length < 2) return slot.typicalIntervalAfterH;
 
-  // Collect intervals where the feed fell in this slot
-  const intervals: number[] = [];
-  const weights: number[] = [];
+  // Collect all intervals in this slot, plus type-specific subsets
+  const allIntervals: number[] = [];
+  const allWeights: number[] = [];
+  const typedIntervals: number[] = [];
+  const typedWeights: number[] = [];
+
   for (let i = 1; i < babyFeeds.length; i++) {
-    const prevHour = babyFeeds[i - 1].timestamp.getHours();
+    const prevFeed = babyFeeds[i - 1];
+    const prevHour = prevFeed.timestamp.getHours();
     const prevSlot = profile.slots.find((s) => s.hours.includes(prevHour));
     if (!prevSlot || prevSlot.id !== slotId) continue;
 
-    const diffH = (babyFeeds[i].timestamp.getTime() - babyFeeds[i - 1].timestamp.getTime()) / 3_600_000;
+    const diffH = (babyFeeds[i].timestamp.getTime() - prevFeed.timestamp.getTime()) / 3_600_000;
     if (diffH > INTERVAL_FILTER.minH && diffH < INTERVAL_FILTER.maxH) {
-      intervals.push(diffH);
-      const midpoint = new Date((babyFeeds[i - 1].timestamp.getTime() + babyFeeds[i].timestamp.getTime()) / 2);
-      weights.push(recencyWeight(midpoint, now));
+      const midpoint = new Date((prevFeed.timestamp.getTime() + babyFeeds[i].timestamp.getTime()) / 2);
+      const w = recencyWeight(midpoint, now);
+      allIntervals.push(diffH);
+      allWeights.push(w);
+      if (afterType && prevFeed.type === afterType) {
+        typedIntervals.push(diffH);
+        typedWeights.push(w);
+      }
     }
   }
 
-  if (intervals.length < 3) return slot.typicalIntervalAfterH;
-  return weightedMedian(intervals, weights);
+  // Prefer type-specific intervals if enough data
+  if (afterType && typedIntervals.length >= 3) {
+    return weightedMedian(typedIntervals, typedWeights);
+  }
+  if (allIntervals.length < 3) return slot.typicalIntervalAfterH;
+  return weightedMedian(allIntervals, allWeights);
 }
 
 /**
@@ -417,7 +449,7 @@ function predictFromProfile(
   baby: BabyName,
   allFeeds: FeedRecord[],
   now: Date,
-  cachedInterval: (slotId: string) => number,
+  cachedInterval: (slotId: string, afterType?: 'bottle' | 'breast') => number,
   cachedVolume: (slotId: string) => { meanMl: number; stdMl: number },
 ): Prediction {
   const profile = PROFILES[baby];
