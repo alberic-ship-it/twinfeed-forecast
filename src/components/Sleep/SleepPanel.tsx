@@ -189,41 +189,47 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                 </div>
               )}
 
-              {/* Today's nap list with delete */}
+              {/* Today's nap list — accordion */}
               {analysis.todayNapRecords.length > 0 && (
-                <div className="space-y-0.5">
-                  {analysis.todayNapRecords.map((nap) => (
-                    <div key={nap.id} className="flex items-center justify-between group">
-                      <p className="text-[11px] text-gray-400">
-                        {formatTime(nap.startTime)} · {nap.durationMin} min
-                      </p>
-                      {confirmDelete === nap.id ? (
-                        <div className="flex items-center gap-1">
+                <details className="group">
+                  <summary className="flex items-center gap-1 cursor-pointer list-none [&::-webkit-details-marker]:hidden text-[11px] text-gray-400 hover:text-gray-500 transition-colors">
+                    <span className="transition-transform group-open:rotate-90">&#9656;</span>
+                    Détail des siestes
+                  </summary>
+                  <div className="space-y-0.5 mt-1 pl-2.5">
+                    {analysis.todayNapRecords.map((nap) => (
+                      <div key={nap.id} className="flex items-center justify-between">
+                        <p className="text-[11px] text-gray-400">
+                          {formatTime(nap.startTime)} · {nap.durationMin} min
+                        </p>
+                        {confirmDelete === nap.id ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => { deleteSleep(nap.id); setConfirmDelete(null); }}
+                              className="text-[10px] text-red-500 font-medium px-1.5 py-0.5 rounded bg-red-50 hover:bg-red-100 active:bg-red-200 transition-colors"
+                            >
+                              Suppr
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelete(null)}
+                              className="text-[10px] text-gray-400 px-1 py-0.5"
+                            >
+                              Non
+                            </button>
+                          </div>
+                        ) : (
                           <button
-                            onClick={() => { deleteSleep(nap.id); setConfirmDelete(null); }}
-                            className="text-[10px] text-red-500 font-medium px-1.5 py-0.5 rounded bg-red-50 hover:bg-red-100 active:bg-red-200 transition-colors"
+                            onClick={() => setConfirmDelete(nap.id)}
+                            className="p-1 text-gray-300 hover:text-red-400 active:text-red-500 transition-colors"
+                            title="Supprimer"
                           >
-                            Suppr
+                            <Trash2 size={11} />
                           </button>
-                          <button
-                            onClick={() => setConfirmDelete(null)}
-                            className="text-[10px] text-gray-400 px-1 py-0.5"
-                          >
-                            Non
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setConfirmDelete(nap.id)}
-                          className="p-1 text-gray-300 hover:text-red-400 active:text-red-500 transition-colors"
-                          title="Supprimer"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </details>
               )}
             </div>
           );
