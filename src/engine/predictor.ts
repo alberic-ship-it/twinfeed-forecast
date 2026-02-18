@@ -175,28 +175,38 @@ export function predictNextFeed(
   }
 
   // --- POST-NAP ADJUSTMENT ---
-  // If baby recently woke from a nap, override with nap-based prediction
-  // (babies typically feed shortly after waking).
-  const recentNap = findRecentNapWakeUp(baby, allSleeps, now, 120);
+  // If baby woke from a nap today and hasn't been fed since, rebase the
+  // prediction on the nap wake-up. Window = 480 min (8h) so manually-logged
+  // past naps are picked up, not just "just woke up" ones.
+  const recentNap = findRecentNapWakeUp(baby, allSleeps, now, 480);
   if (recentNap?.endTime) {
     const postNapLatency = computePostNapFeedLatency(baby, allFeeds, allSleeps, now);
     // Default: 30 min post-nap if insufficient historical data
     const latencyMin = postNapLatency ?? 30;
-    const postNapTime = addMinutes(recentNap.endTime, latencyMin);
+    let postNapTime = addMinutes(recentNap.endTime, latencyMin);
 
-    // Only use post-nap prediction if it's sooner than the feed-based one
-    // and the baby hasn't already been fed since waking
     const fedSinceWake = babyFeeds.some(
       (f) => f.timestamp.getTime() >= recentNap.endTime!.getTime(),
     );
 
-    if (!fedSinceWake && postNapTime > now && postNapTime < predictedTime) {
-      predictedTime = postNapTime;
-      explanations.push({
-        ruleId: 'POST_NAP',
-        text: `Réveil de sieste — repas attendu ~${latencyMin} min après`,
-        impact: `avancé de ${Math.round((predictedTime.getTime() - postNapTime.getTime()) / 60_000 + latencyMin)} min`,
-      });
+    if (!fedSinceWake) {
+      // If post-nap feed time is already past, chain forward using slot
+      // intervals until we reach the future — this rebases the whole
+      // prediction chain on the nap wake-up.
+      while (postNapTime < now) {
+        const slot = getSlotForHour(postNapTime.getHours(), baby);
+        const slotIntervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
+        postNapTime = addMinutes(postNapTime, Math.round(slotIntervalH * 60));
+      }
+
+      if (postNapTime < predictedTime) {
+        predictedTime = postNapTime;
+        explanations.push({
+          ruleId: 'POST_NAP',
+          text: `Réveil de sieste — repas recalé depuis réveil à ${recentNap.endTime.getHours()}h${String(recentNap.endTime.getMinutes()).padStart(2, '0')}`,
+          impact: `~${latencyMin} min post-nap`,
+        });
+      }
     }
   }
 
