@@ -1,13 +1,17 @@
-import { differenceInMinutes } from 'date-fns';
+import { differenceInMinutes, startOfDay } from 'date-fns';
 import type { SleepRecord, FeedRecord, BabyName } from '../types';
 import { DEFAULT_SLEEP, NIGHT_SLEEP, WAKE_WINDOWS } from '../data/knowledge';
-import { recencyWeight, weightedMedian, weightedAvg, filterRecentFeeds, filterRecentSleeps } from './recency';
+import { recencyWeight, weightedMedian, weightedAvg, percentile, filterRecentFeeds, filterRecentSleeps } from './recency';
 
 export interface SleepPrediction {
   predictedTime: Date;
-  confidenceMin: 30;
+  confidenceMin: number;
   estimatedDurationMin: number;
+  hint?: string;
 }
+
+export type SleepStatus = 'naps_remaining' | 'naps_done' | 'rescue_nap';
+export type SleepQuality = 'good' | 'fair' | 'poor';
 
 export interface SleepAnalysis {
   baby: BabyName;
@@ -21,6 +25,12 @@ export interface SleepAnalysis {
   avgNapDurationMin: number;
   /** Estimated bedtime (always set, even if past — used for timeline display) */
   estimatedBedtimeDate: Date;
+  /** Current sleep status for UI display */
+  sleepStatus: SleepStatus;
+  /** Expected total day sleep in minutes (napsPerDay × avgNapDuration) */
+  expectedDaySleepMin: number;
+  /** Quality of today's day sleep relative to expected */
+  sleepQuality: SleepQuality;
 }
 
 // ── Helpers ──
@@ -42,6 +52,64 @@ function findLastFeedBefore(
     }
   }
   return best;
+}
+
+/**
+ * Compute IQR-based confidence interval.
+ * Returns IQR / 2, bounded [15, 45]. Fallback 30 if < 3 data points.
+ */
+function iqrConfidence(values: number[]): number {
+  if (values.length < 3) return 30;
+  const p25 = percentile(values, 25);
+  const p75 = percentile(values, 75);
+  const iqr = p75 - p25;
+  return Math.max(15, Math.min(45, Math.round(iqr / 2)));
+}
+
+/**
+ * Compute positional inter-nap intervals.
+ * Groups naps by day, then computes the median interval after nap at position N.
+ */
+function computePositionalInterNap(
+  allNaps: SleepRecord[],
+  now: Date,
+): Map<number, number> {
+  // Group naps by day
+  const napsByDay = new Map<string, SleepRecord[]>();
+  for (const nap of allNaps) {
+    const dayKey = startOfDay(nap.startTime).toISOString();
+    const list = napsByDay.get(dayKey) ?? [];
+    list.push(nap);
+    napsByDay.set(dayKey, list);
+  }
+
+  // For each day with >=2 naps, compute interval after nap N (0-indexed)
+  const intervalsByPosition = new Map<number, { values: number[]; weights: number[] }>();
+
+  for (const dayNaps of napsByDay.values()) {
+    if (dayNaps.length < 2) continue;
+    const sorted = [...dayNaps].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const endTime = sorted[i].endTime;
+      if (!endTime) continue;
+      const gap = differenceInMinutes(sorted[i + 1].startTime, endTime);
+      if (gap > 0 && gap < 360) {
+        const entry = intervalsByPosition.get(i) ?? { values: [], weights: [] };
+        entry.values.push(gap);
+        entry.weights.push(recencyWeight(sorted[i + 1].startTime, now));
+        intervalsByPosition.set(i, entry);
+      }
+    }
+  }
+
+  // Compute weighted median per position
+  const result = new Map<number, number>();
+  for (const [pos, data] of intervalsByPosition) {
+    if (data.values.length >= 3) {
+      result.set(pos, weightedMedian(data.values, data.weights));
+    }
+  }
+  return result;
 }
 
 // ── Main analysis ──
@@ -112,6 +180,9 @@ export function analyzeSleep(
   const medianInterNap =
     interNapIntervals.length >= 3 ? weightedMedian(interNapIntervals, interNapWeights) : null;
 
+  // ── Compute positional inter-nap intervals ──
+  const positionalInterNap = computePositionalInterNap(allNaps, now);
+
   // ── Compute average nap duration from history (weighted by recency) ──
   const napDurations = allNaps.map((n) => n.durationMin);
   const napDurWeights = allNaps.map((n) => recencyWeight(n.startTime, now));
@@ -120,26 +191,35 @@ export function analyzeSleep(
       ? Math.round(weightedAvg(napDurations, napDurWeights))
       : defaults.napDurationMin;
 
-  // ── Effective nap count: max(logged, projected past windows) ──
-  // Count default nap windows that have already elapsed as "probable" naps,
-  // so predictions stay consistent with the Timeline projections.
-  const currentH = now.getHours() + now.getMinutes() / 60;
-  let projectedPastNaps = 0;
-  for (const window of defaults.bestNapTimes) {
-    if (currentH >= window.endH) {
-      projectedPastNaps++;
-    }
+  // ── Expected day sleep & quality ──
+  const expectedDaySleepMin = defaults.napsPerDay * avgNapDuration;
+  const sleepRatio = expectedDaySleepMin > 0 ? totalSleepToday / expectedDaySleepMin : 1;
+  const sleepQuality: SleepQuality =
+    sleepRatio >= 0.9 ? 'good' : sleepRatio >= 0.7 ? 'fair' : 'poor';
+
+  // ── IQR-based confidence for naps ──
+  const napConfidence = iqrConfidence(interNapIntervals);
+
+  // ── Determine sleep status ──
+  const lastTodayNap = todayNaps.length > 0 ? todayNaps[todayNaps.length - 1] : null;
+  const lastNapShort = lastTodayNap ? lastTodayNap.durationMin < 25 : false;
+  const sleepDeficit = expectedDaySleepMin - totalSleepToday;
+
+  let sleepStatus: SleepStatus;
+  if (napsToday < defaults.napsPerDay) {
+    sleepStatus = 'naps_remaining';
+  } else if (sleepDeficit > 30 || lastNapShort) {
+    sleepStatus = 'rescue_nap';
+  } else {
+    sleepStatus = 'naps_done';
   }
-  const effectiveNapsToday = Math.max(napsToday, projectedPastNaps);
 
   // ── Next nap prediction ──
   let nextNap: SleepPrediction | null = null;
 
-  if (effectiveNapsToday < defaults.napsPerDay) {
+  if (sleepStatus === 'naps_remaining' || sleepStatus === 'rescue_nap') {
     let predictedTime: Date | null = null;
-
-    const lastTodayNap =
-      todayNaps.length > 0 ? todayNaps[todayNaps.length - 1] : null;
+    let hint: string | undefined;
 
     const lastFeedToday = babyFeeds.filter(
       (f) => f.timestamp >= todayStart && f.timestamp <= now,
@@ -149,64 +229,107 @@ export function analyzeSleep(
         ? lastFeedToday[lastFeedToday.length - 1]
         : null;
 
-    // Strategy A: if a nap was logged today, prioritize inter-nap interval
-    // (more relevant than feed-based when we know the baby slept)
-    if (lastTodayNap?.endTime) {
-      // A1: data-driven inter-nap interval
-      if (medianInterNap !== null) {
-        const fromNap = new Date(
-          lastTodayNap.endTime.getTime() + medianInterNap * 60_000,
-        );
+    if (sleepStatus === 'rescue_nap') {
+      // Rescue nap: use reduced wake window (70% of median)
+      if (lastTodayNap?.endTime) {
+        const baseInterval = positionalInterNap.get(napsToday - 1) ?? medianInterNap ?? ((WAKE_WINDOWS.optimalMin + WAKE_WINDOWS.optimalMax) / 2);
+        const reducedInterval = baseInterval * 0.7;
+        const fromNap = new Date(lastTodayNap.endTime.getTime() + reducedInterval * 60_000);
         if (fromNap > now) {
           predictedTime = fromNap;
+        } else {
+          // Rescue nap is overdue — suggest now + 15min
+          predictedTime = new Date(now.getTime() + 15 * 60_000);
         }
       }
+      hint = lastNapShort
+        ? 'Sieste courte — réveil plus tôt que prévu'
+        : 'Sieste de rattrapage — déficit de sommeil';
+    } else {
+      // Normal nap prediction using positional interval or fallback chain
 
-      // A2: fallback to wake window if no inter-nap data
-      if (!predictedTime) {
-        const wakeWindowMin = (WAKE_WINDOWS.optimalMin + WAKE_WINDOWS.optimalMax) / 2;
-        const fromWake = new Date(
-          lastTodayNap.endTime.getTime() + wakeWindowMin * 60_000,
-        );
-        if (fromWake > now) {
-          predictedTime = fromWake;
-        }
-      }
-    }
-
-    // Strategy B: no nap today yet — use feed + median latency
-    if (!predictedTime && mostRecentFeed && medianLatency !== null) {
-      const fromFeed = new Date(
-        mostRecentFeed.timestamp.getTime() + medianLatency * 60_000,
-      );
-      if (fromFeed > now) {
-        predictedTime = fromFeed;
-      }
-    }
-
-    // Strategy C: fallback to default nap windows
-    // Use effectiveNapsToday to skip past windows (including projected ones)
-    if (!predictedTime) {
-      const currentH = now.getHours() + now.getMinutes() / 60;
-      for (let i = effectiveNapsToday; i < defaults.bestNapTimes.length; i++) {
-        const window = defaults.bestNapTimes[i];
-        if (currentH < window.endH) {
-          const midH = (window.startH + window.endH) / 2;
-          predictedTime = new Date(now);
-          predictedTime.setHours(Math.floor(midH), Math.round((midH % 1) * 60), 0, 0);
-          if (predictedTime <= now) {
-            predictedTime = new Date(now.getTime() + 15 * 60_000);
+      // Strategy A: if a nap was logged today, prioritize inter-nap interval
+      if (lastTodayNap?.endTime) {
+        // A1: positional inter-nap interval (best)
+        const positionalInterval = positionalInterNap.get(napsToday - 1);
+        if (positionalInterval !== undefined) {
+          let interval = positionalInterval;
+          // Short-nap fast-retry: reduce by 30% if last nap was short
+          if (lastNapShort) {
+            interval = interval * 0.7;
+            hint = 'Sieste courte — réveil plus tôt que prévu';
           }
-          break;
+          const fromNap = new Date(lastTodayNap.endTime.getTime() + interval * 60_000);
+          if (fromNap > now) {
+            predictedTime = fromNap;
+          }
+        }
+
+        // A2: global median inter-nap
+        if (!predictedTime && medianInterNap !== null) {
+          let interval = medianInterNap;
+          if (lastNapShort) {
+            interval = interval * 0.7;
+            hint = 'Sieste courte — réveil plus tôt que prévu';
+          }
+          const fromNap = new Date(lastTodayNap.endTime.getTime() + interval * 60_000);
+          if (fromNap > now) {
+            predictedTime = fromNap;
+          }
+        }
+
+        // A3: fallback to wake window
+        if (!predictedTime) {
+          let wakeWindowMin = (WAKE_WINDOWS.optimalMin + WAKE_WINDOWS.optimalMax) / 2;
+          if (lastNapShort) {
+            wakeWindowMin = wakeWindowMin * 0.7;
+            hint = 'Sieste courte — réveil plus tôt que prévu';
+          }
+          const fromWake = new Date(lastTodayNap.endTime.getTime() + wakeWindowMin * 60_000);
+          if (fromWake > now) {
+            predictedTime = fromWake;
+          }
+        }
+      }
+
+      // Strategy B: no nap today yet — use feed + median latency
+      if (!predictedTime && mostRecentFeed && medianLatency !== null) {
+        const fromFeed = new Date(
+          mostRecentFeed.timestamp.getTime() + medianLatency * 60_000,
+        );
+        if (fromFeed > now) {
+          predictedTime = fromFeed;
+        }
+      }
+
+      // Strategy C: fallback to default nap windows
+      if (!predictedTime) {
+        const currentH = now.getHours() + now.getMinutes() / 60;
+        for (let i = napsToday; i < defaults.bestNapTimes.length; i++) {
+          const window = defaults.bestNapTimes[i];
+          if (currentH < window.endH) {
+            const midH = (window.startH + window.endH) / 2;
+            predictedTime = new Date(now);
+            predictedTime.setHours(Math.floor(midH), Math.round((midH % 1) * 60), 0, 0);
+            if (predictedTime <= now) {
+              predictedTime = new Date(now.getTime() + 15 * 60_000);
+            }
+            break;
+          }
         }
       }
     }
 
     if (predictedTime) {
+      const estimatedDurationMin = sleepStatus === 'rescue_nap'
+        ? Math.min(30, Math.round(avgNapDuration * 0.6))
+        : avgNapDuration;
+
       nextNap = {
         predictedTime,
-        confidenceMin: 30,
-        estimatedDurationMin: avgNapDuration,
+        confidenceMin: napConfidence,
+        estimatedDurationMin,
+        hint,
       };
     }
   }
@@ -235,6 +358,9 @@ export function analyzeSleep(
       ? Math.round(weightedAvg(nightDurations, nightWeights))
       : defaults.nightDurationMin;
 
+  // IQR-based confidence for bedtime
+  const bedtimeConfidence = iqrConfidence(bedtimeMinutes);
+
   let bedtimeDate = new Date(now);
   bedtimeDate.setHours(
     Math.floor(medianBedtimeMin / 60),
@@ -245,20 +371,16 @@ export function analyzeSleep(
 
   // Adjust bedtime based on today's context:
   // Only adjust if all expected naps are done — otherwise deficit is misleading
-  if (effectiveNapsToday >= defaults.napsPerDay) {
-    const expectedDaySleepMin = defaults.napsPerDay * avgNapDuration;
-    const sleepDeficitMin = expectedDaySleepMin - totalSleepToday;
-
-    if (sleepDeficitMin > 30) {
+  if (napsToday >= defaults.napsPerDay) {
+    if (sleepDeficit > 30) {
       // Pull bedtime earlier: ~10 min per 30 min deficit, capped at 30 min
-      const pullMin = Math.min(30, Math.round(sleepDeficitMin * 0.33));
+      const pullMin = Math.min(30, Math.round(sleepDeficit * 0.33));
       bedtimeDate = new Date(bedtimeDate.getTime() - pullMin * 60_000);
     }
   }
 
   // Wake-window cap: only applies when all expected naps are done for the day.
-  // If there are still naps to come, the baby will sleep again before bedtime.
-  if (effectiveNapsToday >= defaults.napsPerDay) {
+  if (napsToday >= defaults.napsPerDay) {
     const lastNapOrSleep = todayNaps.length > 0
       ? todayNaps[todayNaps.length - 1]
       : null;
@@ -283,7 +405,7 @@ export function analyzeSleep(
   if (bedtimeDate > now) {
     bedtime = {
       predictedTime: bedtimeDate,
-      confidenceMin: 30,
+      confidenceMin: bedtimeConfidence,
       estimatedDurationMin: avgNightDuration,
     };
   }
@@ -291,11 +413,14 @@ export function analyzeSleep(
   return {
     baby,
     totalSleepToday,
-    napsToday: effectiveNapsToday,
+    napsToday,
     nextNap,
     bedtime,
     medianInterNapMin: medianInterNap,
     avgNapDurationMin: avgNapDuration,
     estimatedBedtimeDate: bedtimeDate,
+    sleepStatus,
+    expectedDaySleepMin,
+    sleepQuality,
   };
 }

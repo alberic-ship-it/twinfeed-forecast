@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Moon, Clock, Lightbulb, BookOpen } from 'lucide-react';
+import { Lightbulb, BookOpen, CheckCircle, AlertTriangle } from 'lucide-react';
 import type { BabyName, FeedSleepAnalysis, InsightConfidence } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
 import { PROFILES, getHourlyFacts } from '../../data/knowledge';
@@ -51,6 +51,12 @@ const FACT_CATEGORY_COLORS: Record<string, string> = {
   twins: 'bg-pink-100 text-pink-600',
 };
 
+const QUALITY_COLORS: Record<string, string> = {
+  good: 'bg-green-100 text-green-700',
+  fair: 'bg-orange-100 text-orange-700',
+  poor: 'bg-red-100 text-red-700',
+};
+
 /**
  * Pick 1 insight per baby, prioritizing the hourly contextual insight
  * (tied to the current time slot). Falls back to general insights
@@ -60,11 +66,9 @@ function pickHourlyInsight(insights: FeedSleepAnalysis | null, hour: number) {
   const all = insights?.insights ?? [];
   if (all.length === 0) return null;
 
-  // Priority: show the contextual hourly insight (computed for this time slot)
   const hourlyContextual = all.find((i) => i.id.startsWith('hourly-'));
   if (hourlyContextual) return hourlyContextual;
 
-  // Fallback: rotate through general insights
   const now = new Date();
   const dayOfYear = Math.floor(
     (now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000,
@@ -98,51 +102,77 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                 {profile.name}
               </span>
 
-              {/* Next nap */}
-              {analysis.nextNap && (
-                <div className="bg-indigo-50 rounded-lg p-2 space-y-0.5">
-                  <div className="flex items-center gap-1">
-                    <Clock className="text-indigo-400" size={12} />
-                    <span className="text-xs font-medium text-indigo-600">
-                      Prochaine sieste
-                    </span>
-                  </div>
-                  <p className="text-sm font-semibold text-indigo-700">
-                    {formatTime(analysis.nextNap.predictedTime)}{' '}
-                    <span className="text-xs font-normal text-indigo-400">
-                      (±30 min)
-                    </span>
+              {/* Next nap — normal */}
+              {analysis.nextNap && analysis.sleepStatus === 'naps_remaining' && (
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide">Prochaine sieste</p>
+                  <p className="text-xl sm:text-2xl font-bold text-indigo-700">
+                    {formatTime(analysis.nextNap.predictedTime)}
                   </p>
-                  <p className="text-[11px] text-indigo-400">
-                    ~{analysis.nextNap.estimatedDurationMin} min estimées
+                  <p className="text-xs text-gray-400">
+                    ±{analysis.nextNap.confidenceMin} min · ~{analysis.nextNap.estimatedDurationMin} min
+                  </p>
+                  {analysis.nextNap.hint && (
+                    <p className="text-[11px] text-amber-500 mt-0.5">
+                      {analysis.nextNap.hint}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Rescue nap */}
+              {analysis.nextNap && analysis.sleepStatus === 'rescue_nap' && (
+                <div>
+                  <div className="flex items-center gap-1">
+                    <AlertTriangle className="text-orange-400" size={11} />
+                    <p className="text-xs text-orange-500 uppercase tracking-wide">Sieste de rattrapage</p>
+                  </div>
+                  <p className="text-xl sm:text-2xl font-bold text-orange-600">
+                    {formatTime(analysis.nextNap.predictedTime)}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    ±{analysis.nextNap.confidenceMin} min · ~{analysis.nextNap.estimatedDurationMin} min
+                  </p>
+                  {analysis.nextNap.hint && (
+                    <p className="text-[11px] text-orange-500 mt-0.5">
+                      {analysis.nextNap.hint}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Naps done — compact badge */}
+              {analysis.sleepStatus === 'naps_done' && (
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="text-green-500 shrink-0" size={12} />
+                  <p className="text-xs text-green-700">
+                    {analysis.napsToday} sieste{analysis.napsToday > 1 ? 's' : ''}
                   </p>
                 </div>
               )}
 
-              {!analysis.nextNap && analysis.napsToday >= 1 && (
-                <p className="text-xs text-gray-400 italic">
-                  {analysis.napsToday} sieste{analysis.napsToday > 1 ? 's' : ''} aujourd'hui — pas d'autre prévue
-                </p>
-              )}
-
               {/* Bedtime */}
               {analysis.bedtime && (
-                <div className="bg-purple-50 rounded-lg p-2 space-y-0.5">
-                  <div className="flex items-center gap-1">
-                    <Moon className="text-purple-400" size={12} />
-                    <span className="text-xs font-medium text-purple-600">
-                      Dodo
-                    </span>
-                  </div>
-                  <p className="text-sm font-semibold text-purple-700">
-                    {formatTime(analysis.bedtime.predictedTime)}{' '}
-                    <span className="text-xs font-normal text-purple-400">
-                      (±30 min)
-                    </span>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide">Dodo</p>
+                  <p className="text-xl sm:text-2xl font-bold text-purple-700">
+                    {formatTime(analysis.bedtime.predictedTime)}
                   </p>
-                  <p className="text-[11px] text-purple-400">
-                    ~{formatDuration(analysis.bedtime.estimatedDurationMin)} de nuit estimées
+                  <p className="text-xs text-gray-400">
+                    ±{analysis.bedtime.confidenceMin} min · ~{formatDuration(analysis.bedtime.estimatedDurationMin)} de nuit
                   </p>
+                </div>
+              )}
+
+              {/* Post-bedtime summary: no nextNap AND no bedtime */}
+              {!analysis.nextNap && !analysis.bedtime && (
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500">
+                    {analysis.napsToday} sieste{analysis.napsToday > 1 ? 's' : ''} · {formatDuration(analysis.totalSleepToday)} de sommeil · dodo à {formatTime(analysis.estimatedBedtimeDate)}
+                  </p>
+                  <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-medium ${QUALITY_COLORS[analysis.sleepQuality]}`}>
+                    {analysis.sleepQuality === 'good' ? 'Bon sommeil' : analysis.sleepQuality === 'fair' ? 'Sommeil moyen' : 'Sommeil insuffisant'}
+                  </span>
                 </div>
               )}
             </div>

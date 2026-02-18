@@ -43,6 +43,13 @@ export function weightedMedian(values: number[], weights: number[]): number {
   return pairs[pairs.length - 1].v;
 }
 
+export function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.floor((p / 100) * (sorted.length - 1));
+  return sorted[idx];
+}
+
 export function weightedAvg(values: number[], weights: number[]): number {
   if (values.length === 0) return 0;
   let sumVW = 0;

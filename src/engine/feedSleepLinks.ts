@@ -8,28 +8,13 @@ import type {
   InsightConfidence,
 } from '../types';
 import { PROFILES, NIGHT_SLEEP } from '../data/knowledge';
-import { recencyWeight, weightedMedian, weightedAvg, filterRecentFeeds, filterRecentSleeps } from './recency';
+import { recencyWeight, weightedMedian, weightedAvg, percentile as sharedPercentile, filterRecentFeeds, filterRecentSleeps } from './recency';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
 
-function median(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
-}
-
-function percentile(values: number[], p: number): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.floor((p / 100) * (sorted.length - 1));
-  return sorted[idx];
-}
-
+/** Simple unweighted average — used only for per-day aggregates without timestamps. */
 function avg(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((s, v) => s + v, 0) / values.length;
@@ -303,8 +288,8 @@ function computeFeedToSleepLatency(
   if (latencies.length < MIN_DATA_POINTS) return null;
 
   const med = Math.round(weightedMedian(latencies, latWeights));
-  const p25 = Math.round(percentile(latencies, 25));
-  const p75 = Math.round(percentile(latencies, 75));
+  const p25 = Math.round(sharedPercentile(latencies, 25));
+  const p75 = Math.round(sharedPercentile(latencies, 75));
 
   const name = PROFILES[baby].name;
 
@@ -353,6 +338,7 @@ function computeClusterThenSleep(
 
   // Find next sleep after each cluster
   const postClusterDurations: number[] = [];
+  const postClusterWeights: number[] = [];
   for (const clusterEnd of clusterEndTimes) {
     const nextSleep = sleeps.find(
       (s) =>
@@ -361,6 +347,7 @@ function computeClusterThenSleep(
     );
     if (nextSleep) {
       postClusterDurations.push(nextSleep.durationMin);
+      postClusterWeights.push(recencyWeight(clusterEnd, now));
     }
   }
 
@@ -370,7 +357,7 @@ function computeClusterThenSleep(
   const allDurations = sleeps.map((s) => s.durationMin);
   const allDurWeights = sleeps.map((s) => recencyWeight(s.startTime, now));
   const avgAll = weightedAvg(allDurations, allDurWeights);
-  const avgPostCluster = avg(postClusterDurations);
+  const avgPostCluster = weightedAvg(postClusterDurations, postClusterWeights);
   const diff = Math.round(avgPostCluster - avgAll);
 
   if (Math.abs(diff) < 3) return null;
@@ -753,7 +740,7 @@ function computeAfternoonFeedSleepQuality(
 function computeNightFeedTrend(
   baby: BabyName,
   bottles: FeedRecord[],
-  _now: Date,
+  now: Date,
 ): FeedSleepInsight | null {
   // Night bottles (22h-6h)
   const nightBottles = bottles
@@ -766,8 +753,8 @@ function computeNightFeedTrend(
   const firstHalf = nightBottles.slice(0, midIdx);
   const secondHalf = nightBottles.slice(midIdx);
 
-  const avgFirst = Math.round(avg(firstHalf.map((f) => f.volumeMl)));
-  const avgSecond = Math.round(avg(secondHalf.map((f) => f.volumeMl)));
+  const avgFirst = Math.round(weightedAvg(firstHalf.map((f) => f.volumeMl), firstHalf.map((f) => recencyWeight(f.timestamp, now))));
+  const avgSecond = Math.round(weightedAvg(secondHalf.map((f) => f.volumeMl), secondHalf.map((f) => recencyWeight(f.timestamp, now))));
   const diff = avgSecond - avgFirst;
 
   if (Math.abs(diff) < 10) return null;
@@ -1085,7 +1072,7 @@ function computeScheduleRegularity(
 
   if (dayData.length < MIN_DATA_POINTS) return null;
 
-  const medStd = median(dayData.map((d) => d.stdInterval));
+  const medStd = weightedMedian(dayData.map((d) => d.stdInterval), dayData.map((d) => recencyWeight(d.date, now)));
   const regular = dayData.filter((d) => d.stdInterval <= medStd);
   const irregular = dayData.filter((d) => d.stdInterval > medStd);
   if (regular.length < 3 || irregular.length < 3) return null;
