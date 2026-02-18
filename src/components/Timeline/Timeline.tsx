@@ -192,14 +192,27 @@ function findNapEndAfter(
   return null;
 }
 
+/**
+ * Project naps for the day using the sleep engine as SINGLE source of truth.
+ *
+ * Rules:
+ * - Future naps come exclusively from sleepAn.nextNap + chaining via
+ *   medianInterNapMin. This matches what the SleepPanel displays.
+ * - Past projected naps: only fill gaps where no real nap exists.
+ *   Count real naps vs expected, and only project missing ones.
+ * - Any projected nap that overlaps a real nap (±60 min) is suppressed.
+ * - Night blocks: morning (from data or default) + evening bedtime.
+ */
 function projectNapsForDay(
   baby: BabyName, sleepAn: SleepAnalysis, now: Date,
   todaySleeps: SleepRecord[], allSleeps: SleepRecord[],
 ): ProjectedNap[] {
   const defaults = DEFAULT_SLEEP[baby];
   const napDuration = sleepAn.avgNapDurationMin;
+  const naps: ProjectedNap[] = [];
 
-  const tooCloseToReal = (time: Date, durationMin: number) => {
+  // Helper: does a projected nap overlap with any real nap?
+  const overlapsReal = (time: Date, durationMin: number) => {
     const projStart = time.getTime();
     const projEnd = projStart + durationMin * 60_000;
     return todaySleeps.some((s) => {
@@ -207,54 +220,28 @@ function projectNapsForDay(
       const realEnd = s.endTime
         ? s.endTime.getTime()
         : realStart + s.durationMin * 60_000;
-      // Overlap check: projections and real sleep overlap if they don't NOT overlap
-      return projStart < realEnd + 90 * 60_000 && projEnd > realStart - 90 * 60_000;
+      // 60 min buffer on each side
+      return projStart < realEnd + 60 * 60_000 && projEnd > realStart - 60 * 60_000;
     });
   };
 
-  // Past projected naps — only show if no real nap exists nearby.
-  // When a real nap replaces a projected one (even at a different time),
-  // we suppress projected naps in the same broad window to avoid doubles.
-  const pastNaps: ProjectedNap[] = [];
-  const realNapCount = todaySleeps.filter(
-    (s) => s.startTime.getHours() >= 6 && s.startTime.getHours() < 21,
-  ).length;
-  // Only show past projected naps for "slots" not covered by real naps.
-  // If we have as many (or more) real naps as default windows that have
-  // elapsed, don't project any past naps at all.
-  const elapsedWindows = defaults.bestNapTimes.filter(
-    (t) => (now.getHours() + now.getMinutes() / 60) >= t.endH,
-  ).length;
-  const shouldShowPastProjected = realNapCount < elapsedWindows;
-
-  if (shouldShowPastProjected) {
-    for (const t of defaults.bestNapTimes) {
-      const napTime = new Date(now);
-      napTime.setHours(Math.floor(t.startH), (t.startH % 1) * 60, 0, 0);
-      const napEnd = new Date(napTime.getTime() + napDuration * 60_000);
-      if (napEnd >= now) continue;
-      if (!tooCloseToReal(napTime, napDuration)) {
-        pastNaps.push({ time: napTime, durationMin: napDuration });
-      }
-    }
-  }
-
-  const naps: ProjectedNap[] = [...pastNaps];
-
-  // Future naps
+  // ── Future naps: from sleep engine only (matches SleepPanel) ──
   if (sleepAn.nextNap) {
     let current = sleepAn.nextNap.predictedTime;
     const nextDur = sleepAn.nextNap.estimatedDurationMin;
-    if (!tooCloseToReal(current, nextDur)) {
+    if (!overlapsReal(current, nextDur)) {
       naps.push({ time: current, durationMin: nextDur });
     }
+
+    // Chain additional future naps using the same interval the engine uses
     const interNapMin = sleepAn.medianInterNapMin;
     if (interNapMin) {
-      for (let i = sleepAn.napsToday + 1; i < defaults.napsPerDay; i++) {
+      const remainingNaps = defaults.napsPerDay - sleepAn.napsToday - 1;
+      for (let i = 0; i < remainingNaps; i++) {
         const napEnd = new Date(current.getTime() + napDuration * 60_000);
         const next = new Date(napEnd.getTime() + interNapMin * 60_000);
         if (next.getHours() >= 21 || !isToday(next, now)) break;
-        if (!tooCloseToReal(next, napDuration)) {
+        if (!overlapsReal(next, napDuration)) {
           naps.push({ time: next, durationMin: napDuration });
         }
         current = next;
@@ -262,7 +249,39 @@ function projectNapsForDay(
     }
   }
 
-  // Night blocks
+  // ── Past naps: only project for missing default windows ──
+  const realDayNaps = todaySleeps.filter(
+    (s) => s.startTime.getHours() >= 6 && s.startTime.getHours() < 21,
+  );
+  const currentH = now.getHours() + now.getMinutes() / 60;
+
+  for (const window of defaults.bestNapTimes) {
+    // Only consider windows that have fully elapsed
+    if (currentH < window.endH) continue;
+
+    const napTime = new Date(now);
+    napTime.setHours(Math.floor(window.startH), Math.round((window.startH % 1) * 60), 0, 0);
+    const napEnd = new Date(napTime.getTime() + napDuration * 60_000);
+
+    // Check if any real nap covers this window (within the window's time range)
+    const windowStart = new Date(now);
+    windowStart.setHours(Math.floor(window.startH), 0, 0, 0);
+    const windowEnd = new Date(now);
+    windowEnd.setHours(Math.floor(window.endH), Math.round((window.endH % 1) * 60), 0, 0);
+
+    const realNapInWindow = realDayNaps.some((s) => {
+      const sEnd = s.endTime ? s.endTime.getTime() : s.startTime.getTime() + s.durationMin * 60_000;
+      // Real nap overlaps with this window if it starts before window end and ends after window start
+      return s.startTime.getTime() < windowEnd.getTime() + 60 * 60_000 &&
+             sEnd > windowStart.getTime() - 60 * 60_000;
+    });
+
+    if (!realNapInWindow && napEnd < now) {
+      naps.push({ time: napTime, durationMin: napDuration });
+    }
+  }
+
+  // ── Night blocks ──
   const todayMidnight = new Date(now);
   todayMidnight.setHours(0, 0, 0, 0);
   const todayNoon = new Date(now);
@@ -283,7 +302,7 @@ function projectNapsForDay(
     naps.push({ time: todayMidnight, durationMin: defaults.typicalWakeHour * 60, isNight: true });
   }
 
-  // Evening block: always use estimatedBedtimeDate (available even if past)
+  // Evening block: always use estimatedBedtimeDate (matches SleepPanel)
   const bt = sleepAn.estimatedBedtimeDate;
   const toMidnight = (24 * 60) - (bt.getHours() * 60 + bt.getMinutes());
   if (toMidnight > 0) {
