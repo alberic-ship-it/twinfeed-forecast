@@ -364,22 +364,30 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
           const babySleeps = sleeps.filter((s) => s.baby === baby && isToday(s.startTime, now));
           const pred = predictions[baby];
           const sleepAn = sleepAnalyses[baby];
-          const projNapsRaw = projectNapsForDay(baby, sleepAn, now, babySleeps, sleeps);
+          // Deduplicate real sleeps: keep only 1 per 90-min window
+          const dedupedSleeps: SleepRecord[] = [];
+          for (const s of babySleeps) {
+            const dominated = dedupedSleeps.some(
+              (d) => Math.abs(d.startTime.getTime() - s.startTime.getTime()) < 90 * 60_000,
+            );
+            if (!dominated) dedupedSleeps.push(s);
+          }
 
-          // Final safety net: remove any projected nap that overlaps a real sleep
+          const projNapsRaw = projectNapsForDay(baby, sleepAn, now, dedupedSleeps, sleeps);
+
+          // Safety net: remove any projected nap that overlaps a real sleep (±90min)
           const projNaps = projNapsRaw.filter((pn) => {
             if (pn.isNight) return true;
             const pStart = pn.time.getTime();
             const pEnd = pStart + pn.durationMin * 60_000;
-            return !babySleeps.some((s) => {
+            return !dedupedSleeps.some((s) => {
               const rStart = s.startTime.getTime();
               const rEnd = s.endTime ? s.endTime.getTime() : rStart + s.durationMin * 60_000;
-              // Overlap with 60min buffer
-              return pStart < rEnd + 60 * 60_000 && pEnd > rStart - 60 * 60_000;
+              return pStart < rEnd + 90 * 60_000 && pEnd > rStart - 90 * 60_000;
             });
           });
 
-          const projFeeds = pred ? projectFeedsForDay(baby, pred, now, feeds, babySleeps, projNaps) : [];
+          const projFeeds = pred ? projectFeedsForDay(baby, pred, now, feeds, dedupedSleeps, projNaps) : [];
           const nightBlocks = projNaps.filter((n) => n.isNight);
           const napBlocks = projNaps.filter((n) => !n.isNight);
           const nextFeed = projFeeds.find((pf) => pf.time >= now);
@@ -420,8 +428,8 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
                       );
                     })}
 
-                    {/* Real sleeps */}
-                    {babySleeps.map((s) => {
+                    {/* Real sleeps (deduped) */}
+                    {dedupedSleeps.map((s) => {
                       const left = hourToPercent(s.startTime);
                       const end = s.endTime ?? new Date(s.startTime.getTime() + s.durationMin * 60000);
                       const width = Math.max(1, hourToPercent(end) - left);

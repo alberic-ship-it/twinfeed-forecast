@@ -256,7 +256,9 @@ function mergeFeeds(existing: FeedRecord[], incoming: FeedRecord[]): FeedRecord[
 }
 
 function sleepContentKey(s: SleepRecord): string {
-  return `${s.baby}|${s.startTime.getTime()}|${s.durationMin}`;
+  // Normalize to minute precision to avoid millisecond drift creating duplicates
+  const minuteTs = Math.floor(s.startTime.getTime() / 60_000) * 60_000;
+  return `${s.baby}|${minuteTs}|${s.durationMin}`;
 }
 
 function mergeSleeps(existing: SleepRecord[], incoming: SleepRecord[]): SleepRecord[] {
