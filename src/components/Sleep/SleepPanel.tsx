@@ -152,17 +152,20 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
               )}
 
               {/* Bedtime */}
-              {analysis.bedtime && (
-                <div className="bg-purple-50 rounded-lg p-2.5">
-                  <p className="text-[11px] text-purple-400 uppercase tracking-wide font-medium">Dodo</p>
-                  <p className="text-xl sm:text-2xl font-bold text-purple-700 leading-tight">
-                    {formatTime(analysis.bedtime.predictedTime)}
-                  </p>
-                  <p className="text-[11px] text-purple-300 mt-0.5">
-                    ±{analysis.bedtime.confidenceMin} min · ~{formatDuration(analysis.bedtime.estimatedDurationMin)} de nuit
-                  </p>
-                </div>
-              )}
+              {analysis.bedtime && (() => {
+                const wakeTime = new Date(analysis.bedtime.predictedTime.getTime() + analysis.bedtime.estimatedDurationMin * 60_000);
+                return (
+                  <div className="bg-purple-50 rounded-lg p-2.5">
+                    <p className="text-[11px] text-purple-400 uppercase tracking-wide font-medium">Dodo</p>
+                    <p className="text-xl sm:text-2xl font-bold text-purple-700 leading-tight">
+                      {formatTime(analysis.bedtime.predictedTime)}
+                    </p>
+                    <p className="text-[11px] text-purple-300 mt-0.5">
+                      ±{analysis.bedtime.confidenceMin} min · réveil ~{formatTime(wakeTime)}
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Post-bedtime summary: no nextNap AND no bedtime */}
               {!analysis.nextNap && !analysis.bedtime && (
