@@ -226,10 +226,12 @@ function projectNapsForDay(
   };
 
   // ── Future naps: from sleep engine only (matches SleepPanel) ──
+  // IMPORTANT: only add naps that are actually in the future.
+  // Past naps are handled by the window loop below.
   if (sleepAn.nextNap) {
     let current = sleepAn.nextNap.predictedTime;
     const nextDur = sleepAn.nextNap.estimatedDurationMin;
-    if (!overlapsReal(current, nextDur)) {
+    if (current >= now && !overlapsReal(current, nextDur)) {
       naps.push({ time: current, durationMin: nextDur });
     }
 
@@ -278,6 +280,17 @@ function projectNapsForDay(
 
     if (!realNapInWindow && napEnd < now) {
       naps.push({ time: napTime, durationMin: napDuration });
+    }
+  }
+
+  // ── Dedup: remove naps that are too close to each other (within 60min) ──
+  // Keep the first occurrence (future naps added first take priority)
+  for (let i = naps.length - 1; i > 0; i--) {
+    for (let j = 0; j < i; j++) {
+      if (Math.abs(naps[i].time.getTime() - naps[j].time.getTime()) < 60 * 60_000) {
+        naps.splice(i, 1);
+        break;
+      }
     }
   }
 
