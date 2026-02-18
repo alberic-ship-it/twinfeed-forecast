@@ -36,6 +36,7 @@ interface ProjectedNap { time: Date; durationMin: number; isNight?: boolean }
 
 function projectFeedsForDay(
   baby: BabyName, pred: Prediction, now: Date, allFeeds: FeedRecord[],
+  todaySleeps: SleepRecord[], projectedNaps: ProjectedNap[],
 ): ProjectedFeed[] {
   const profile = PROFILES[baby];
   const todayStart = new Date(now);
@@ -46,26 +47,58 @@ function projectFeedsForDay(
     (f) => f.baby === baby && f.timestamp >= todayStart && f.timestamp <= todayEnd,
   );
 
-  const tooCloseToReal = (time: Date) =>
+  // Check if a projected feed is too close to a real feed
+  const tooCloseToRealFeed = (time: Date) =>
     todayFeeds.some((f) => Math.abs(f.timestamp.getTime() - time.getTime()) < 90 * 60_000);
 
+  // Check if a projected feed falls during a sleep (real or projected nap)
+  const duringASleep = (time: Date) => {
+    const t = time.getTime();
+    for (const s of todaySleeps) {
+      const start = s.startTime.getTime();
+      const end = s.endTime ? s.endTime.getTime() : start + s.durationMin * 60_000;
+      if (t >= start && t <= end) return true;
+    }
+    for (const n of projectedNaps) {
+      if (n.isNight) continue;
+      const start = n.time.getTime();
+      const end = start + n.durationMin * 60_000;
+      if (t >= start && t <= end) return true;
+    }
+    return false;
+  };
+
+  const shouldFilter = (time: Date) => tooCloseToRealFeed(time) || duringASleep(time);
+
+  // Past projections: mechanical chain from morning
   const dayProjections = projectDayFromData(baby, allFeeds, now);
   const pastProjections = dayProjections
     .filter((p) => p.time < now)
-    .filter((p) => !tooCloseToReal(p.time));
+    .filter((p) => !shouldFilter(p.time));
 
+  // Future projections: chain from the prediction (nap-aware)
   const futureProjections: ProjectedFeed[] = [];
   let current = pred.timing.predictedTime;
   if (isToday(current, now)) {
-    if (!tooCloseToReal(current)) {
+    if (!shouldFilter(current)) {
       futureProjections.push({ time: current, volumeMl: pred.volume.predictedMl });
     }
     for (let i = 0; i < 10; i++) {
       const slot = profile.slots.find((s) => s.hours.includes(current.getHours())) ?? profile.slots[0];
       const intervalH = computeSlotInterval(slot.id, baby, allFeeds, now);
-      const next = new Date(current.getTime() + intervalH * 3_600_000);
+      let next = new Date(current.getTime() + intervalH * 3_600_000);
       if (!isToday(next, now) || next.getHours() >= 23) break;
-      if (!tooCloseToReal(next)) {
+
+      // If the projected feed falls during a nap, push it after nap end + 30min
+      if (duringASleep(next)) {
+        const napEnd = findNapEndAfter(next, todaySleeps, projectedNaps);
+        if (napEnd) {
+          next = new Date(napEnd.getTime() + 30 * 60_000);
+        }
+      }
+      if (!isToday(next, now) || next.getHours() >= 23) break;
+
+      if (!tooCloseToRealFeed(next)) {
         const nextSlot = profile.slots.find((s) => s.hours.includes(next.getHours())) ?? profile.slots[0];
         const nextVol = computeSlotVolume(nextSlot.id, baby, allFeeds, now);
         futureProjections.push({ time: next, volumeMl: nextVol.meanMl });
@@ -74,6 +107,25 @@ function projectFeedsForDay(
     }
   }
   return [...pastProjections, ...futureProjections];
+}
+
+/** Find the end time of the nap that contains a given time */
+function findNapEndAfter(
+  time: Date, realSleeps: SleepRecord[], projectedNaps: ProjectedNap[],
+): Date | null {
+  const t = time.getTime();
+  for (const s of realSleeps) {
+    const start = s.startTime.getTime();
+    const end = s.endTime ? s.endTime.getTime() : start + s.durationMin * 60_000;
+    if (t >= start && t <= end) return new Date(end);
+  }
+  for (const n of projectedNaps) {
+    if (n.isNight) continue;
+    const start = n.time.getTime();
+    const end = start + n.durationMin * 60_000;
+    if (t >= start && t <= end) return new Date(end);
+  }
+  return null;
 }
 
 function projectNapsForDay(
@@ -201,8 +253,8 @@ export function Timeline({ predictions, feeds, sleeps, sleepAnalyses }: Timeline
           const babySleeps = sleeps.filter((s) => s.baby === baby && isToday(s.startTime, now));
           const pred = predictions[baby];
           const sleepAn = sleepAnalyses[baby];
-          const projFeeds = pred ? projectFeedsForDay(baby, pred, now, feeds) : [];
           const projNaps = projectNapsForDay(baby, sleepAn, now, babySleeps, sleeps);
+          const projFeeds = pred ? projectFeedsForDay(baby, pred, now, feeds, babySleeps, projNaps) : [];
           const nightBlocks = projNaps.filter((n) => n.isNight);
           const napBlocks = projNaps.filter((n) => !n.isNight);
           const nextFeed = projFeeds.find((pf) => pf.time >= now);
