@@ -41,7 +41,7 @@ interface Store {
   setScreen: (screen: Screen) => void;
   loadData: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
   addFeeds: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
-  logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number) => void;
+  logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number, timestamp?: Date) => void;
   logSleep: (baby: BabyName, durationMin: number, endTime?: Date) => void;
   deleteSleep: (id: string) => void;
   deleteFeed: (id: string) => void;
@@ -173,11 +173,11 @@ export const useStore = create<Store>((set, get) => ({
     pushEntries(nonSeedFeeds, nonSeedSleeps).catch(() => {});
   },
 
-  logFeed: (baby, type, ml) => {
+  logFeed: (baby, type, ml, timestamp) => {
     const feed: FeedRecord = {
       id: crypto.randomUUID(),
       baby,
-      timestamp: new Date(),
+      timestamp: timestamp ?? new Date(),
       type,
       volumeMl: ml ?? 0,
     };
