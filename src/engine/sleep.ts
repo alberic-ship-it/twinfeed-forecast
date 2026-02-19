@@ -328,9 +328,16 @@ export function analyzeSleep(
     } else {
       // Normal nap prediction using positional interval or fallback chain
 
+      // Helper : rejette un temps si naps_done et après le cutoff
+      const beforeCutoff = (t: Date) =>
+        sleepStatus !== 'naps_done' ||
+        t.getHours() + t.getMinutes() / 60 < NAP_CUTOFF_HOUR;
+
       if (lastTodayNap?.endTime) {
         // ── Stratégies A : sieste déjà saisie aujourd'hui ──
         // B et C ne s'appliquent pas ici — elles ignoreraient la sieste existante.
+        // Le cutoff est appliqué inline sur chaque stratégie pour que A4 serve
+        // de filet de secours même si A1/A2/A3 donnent une heure après 17h30.
 
         // A1: intervalle positionnel (meilleur)
         const positionalInterval = positionalInterNap.get(napsToday - 1);
@@ -341,7 +348,7 @@ export function analyzeSleep(
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromNap = new Date(lastTodayNap.endTime.getTime() + interval * 60_000);
-          if (fromNap > now) predictedTime = fromNap;
+          if (fromNap > now && beforeCutoff(fromNap)) predictedTime = fromNap;
         }
 
         // A2: médiane globale inter-siestes
@@ -352,7 +359,7 @@ export function analyzeSleep(
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromNap = new Date(lastTodayNap.endTime.getTime() + interval * 60_000);
-          if (fromNap > now) predictedTime = fromNap;
+          if (fromNap > now && beforeCutoff(fromNap)) predictedTime = fromNap;
         }
 
         // A3: fenêtre d'éveil par défaut
@@ -363,13 +370,16 @@ export function analyzeSleep(
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromWake = new Date(lastTodayNap.endTime.getTime() + wakeWindowMin * 60_000);
-          if (fromWake > now) predictedTime = fromWake;
+          if (fromWake > now && beforeCutoff(fromWake)) predictedTime = fromWake;
         }
 
-        // A4: toutes les stratégies dans le passé → sieste en retard
+        // A4: toutes les stratégies épuisées → sieste en retard ou post-cutoff
         if (!predictedTime) {
-          predictedTime = new Date(now.getTime() + 15 * 60_000);
-          hint = 'Sieste en retard — dès que possible';
+          const nowPlus15 = new Date(now.getTime() + 15 * 60_000);
+          if (beforeCutoff(nowPlus15)) {
+            predictedTime = nowPlus15;
+            hint = 'Sieste en retard — dès que possible';
+          }
         }
       } else {
         // ── Stratégies B/C : aucune sieste aujourd'hui (projections pures) ──
@@ -398,14 +408,6 @@ export function analyzeSleep(
             }
           }
         }
-      }
-    }
-
-    if (predictedTime) {
-      // For naps_done: discard prediction if it would start after the cutoff
-      const predictedH = predictedTime.getHours() + predictedTime.getMinutes() / 60;
-      if (sleepStatus === 'naps_done' && predictedH >= NAP_CUTOFF_HOUR) {
-        predictedTime = null;
       }
     }
 
