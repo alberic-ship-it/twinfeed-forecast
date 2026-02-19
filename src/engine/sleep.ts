@@ -296,7 +296,8 @@ export function analyzeSleep(
   // Applied as a final filter for 'naps_done' (quota met but early enough to nap again).
   const NAP_CUTOFF_HOUR = 17.5;
 
-  if (sleepStatus !== 'night_active') {
+  // night_active returns early above — sleepStatus is always a daytime value here
+  {
     let predictedTime: Date | null = null;
     let hint: string | undefined;
 
