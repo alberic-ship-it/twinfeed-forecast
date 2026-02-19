@@ -168,7 +168,6 @@ export function analyzeSleep(
       (s) =>
         s.startTime >= todayStart &&
         s.startTime.getHours() >= 6 &&
-        s.startTime.getHours() < 23 &&
         s.durationMin < NIGHT_SLEEP.minDurationMin,
     );
     const totalSleepToday = todayNaps.reduce((sum, s) => sum + s.durationMin, 0);
@@ -196,16 +195,16 @@ export function analyzeSleep(
     };
   }
 
-  // Today's naps (6h–23h, excluant les vrais sommeils de nuit)
-  // On inclut les courtes phases de sommeil tardives (ex: 21h-22h) qui ne sont
-  // pas des sommeils de nuit (durée < NIGHT_SLEEP.minDurationMin)
+  // Today's naps (depuis 6h, excluant les vrais sommeils de nuit)
+  // Les siestes tardives (21h-23h59) sont incluses tant que leur durée
+  // est inférieure à NIGHT_SLEEP.minDurationMin (5h) — elles impactent
+  // le calcul du coucher via lastNapForBedtime.
   const todayStart = new Date(now);
   todayStart.setHours(6, 0, 0, 0);
   const todayNaps = babySleeps.filter(
     (s) =>
       s.startTime >= todayStart &&
       s.startTime.getHours() >= 6 &&
-      s.startTime.getHours() < 23 &&
       s.durationMin < NIGHT_SLEEP.minDurationMin,
   );
 
@@ -213,11 +212,10 @@ export function analyzeSleep(
   const napsToday = todayNaps.length;
 
   // ── Compute median feed→nap latency from history (weighted by recency) ──
-  // Même fenêtre que todayNaps : 6h-23h, excluant les vrais sommeils de nuit
+  // Même fenêtre que todayNaps : depuis 6h, excluant les vrais sommeils de nuit
   const allNaps = babySleeps.filter(
     (s) =>
       s.startTime.getHours() >= 6 &&
-      s.startTime.getHours() < 23 &&
       s.durationMin < NIGHT_SLEEP.minDurationMin,
   );
 

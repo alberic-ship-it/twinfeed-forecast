@@ -164,16 +164,28 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
               })()}
 
               {/* Post-bedtime summary: no nextNap AND no bedtime */}
-              {!analysis.nextNap && !analysis.bedtime && (
-                <div className="space-y-1">
-                  <p className="text-xs text-gray-500">
-                    {analysis.napsToday} sieste{analysis.napsToday > 1 ? 's' : ''} · {formatDuration(analysis.totalSleepToday)} de sommeil · dodo à {formatTime(analysis.estimatedBedtimeDate)}
-                  </p>
-                  <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-medium ${QUALITY_COLORS[analysis.sleepQuality]}`}>
-                    {analysis.sleepQuality === 'good' ? 'Bon sommeil' : analysis.sleepQuality === 'fair' ? 'Sommeil moyen' : 'Sommeil insuffisant'}
-                  </span>
-                </div>
-              )}
+              {!analysis.nextNap && !analysis.bedtime && (() => {
+                const nightActive = nightSessions[baby] && !nightSessions[baby]!.endTime;
+                return (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-gray-500">
+                      {analysis.napsToday} sieste{analysis.napsToday > 1 ? 's' : ''} · {formatDuration(analysis.totalSleepToday)} de sommeil · dodo à {formatTime(analysis.estimatedBedtimeDate)}
+                    </p>
+                    <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-medium ${QUALITY_COLORS[analysis.sleepQuality]}`}>
+                      {analysis.sleepQuality === 'good' ? 'Bon sommeil' : analysis.sleepQuality === 'fair' ? 'Sommeil moyen' : 'Sommeil insuffisant'}
+                    </span>
+                    {!nightActive && (
+                      <button
+                        onClick={() => startNight(baby)}
+                        className="flex items-center gap-1 px-2 py-1 bg-purple-100 hover:bg-purple-200 active:bg-purple-300 text-purple-600 text-[11px] font-medium rounded transition-colors"
+                      >
+                        <Moon size={11} />
+                        Lancer la nuit
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
             </div>
           );
