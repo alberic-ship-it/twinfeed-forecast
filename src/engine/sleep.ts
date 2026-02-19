@@ -292,7 +292,11 @@ export function analyzeSleep(
   // ── Next nap prediction ──
   let nextNap: SleepPrediction | null = null;
 
-  if (sleepStatus === 'naps_remaining' || sleepStatus === 'rescue_nap') {
+  // Max start hour for a nap — ensures enough wake window before bedtime.
+  // Applied as a final filter for 'naps_done' (quota met but early enough to nap again).
+  const NAP_CUTOFF_HOUR = 17.5;
+
+  if (sleepStatus !== 'night_active') {
     let predictedTime: Date | null = null;
     let hint: string | undefined;
 
@@ -392,6 +396,14 @@ export function analyzeSleep(
             break;
           }
         }
+      }
+    }
+
+    if (predictedTime) {
+      // For naps_done: discard prediction if it would start after the cutoff
+      const predictedH = predictedTime.getHours() + predictedTime.getMinutes() / 60;
+      if (sleepStatus === 'naps_done' && predictedH >= NAP_CUTOFF_HOUR) {
+        predictedTime = null;
       }
     }
 

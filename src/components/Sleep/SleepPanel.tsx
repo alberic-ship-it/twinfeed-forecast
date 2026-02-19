@@ -106,8 +106,8 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                 {profile.name}
               </span>
 
-              {/* Next nap — normal ou sieste courte (même style, pas de carte alarmante) */}
-              {analysis.nextNap && (analysis.sleepStatus === 'naps_remaining' || analysis.sleepStatus === 'rescue_nap') && (
+              {/* Next nap — affiché pour tous les statuts diurnes (y compris naps_done si <17h30) */}
+              {analysis.nextNap && analysis.sleepStatus !== 'night_active' && (
                 <div className="bg-indigo-50 rounded-lg p-2.5">
                   <p className="text-[11px] text-indigo-400 uppercase tracking-wide font-medium">Prochaine sieste</p>
                   <p className="text-xl sm:text-2xl font-bold text-indigo-700 leading-tight">
