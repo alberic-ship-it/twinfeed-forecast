@@ -23,7 +23,15 @@ export type PatternId =
   | 'NIGHT_LIGHT'
   | 'POST_NAP'
   | 'GROWTH'
-  | 'BREAST_RATIO_SHIFT';
+  | 'BREAST_RATIO_SHIFT'
+  | 'LONG_INTERVAL'
+  | 'MORNING_FIRST'
+  | 'AFTERNOON_DIP'
+  | 'SHORT_NAP_SERIES'
+  | 'OVERTIRED'
+  | 'VOLUME_DECLINE'
+  | 'SUSTAINED_APPETITE'
+  | 'SHORT_NIGHT';
 
 export type Screen = 'import' | 'dashboard' | 'entries';
 
