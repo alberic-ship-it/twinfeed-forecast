@@ -454,18 +454,32 @@ export function analyzeSleep(
     }
   }
 
-  // Wake-window cap: only applies when all expected naps are done for the day.
-  if (napsToday >= defaults.napsPerDay) {
-    const lastNapOrSleep = todayNaps.length > 0
-      ? todayNaps[todayNaps.length - 1]
-      : null;
-    if (lastNapOrSleep?.endTime) {
+  // Wake-window adjustments — basées sur la dernière sieste du jour
+  const lastNapForBedtime = todayNaps.length > 0 ? todayNaps[todayNaps.length - 1] : null;
+  if (lastNapForBedtime?.endTime) {
+    // Cap vers l'avant : si le bébé s'est endormi pour la nuit trop tôt après
+    // la dernière sieste, avancer le dodo à lastNap + maxBeforeOvertired.
+    // S'applique uniquement quand le quota est atteint.
+    if (napsToday >= defaults.napsPerDay) {
       const maxBedtime = new Date(
-        lastNapOrSleep.endTime.getTime() + WAKE_WINDOWS.maxBeforeOvertired * 60_000,
+        lastNapForBedtime.endTime.getTime() + WAKE_WINDOWS.maxBeforeOvertired * 60_000,
       );
       if (maxBedtime < bedtimeDate && maxBedtime > now) {
         bedtimeDate = maxBedtime;
       }
+    }
+
+    // Push vers l'arrière : si la dernière sieste se termine APRÈS l'heure
+    // de dodo prédite (typique pour les siestes tardives, ex: sieste à 22h),
+    // repousser le dodo à lastNap.endTime + fenêtre d'éveil minimale.
+    // Un bébé qui se réveille d'une sieste à 22h ne peut pas aller dormir
+    // pour la nuit avant au moins 60 minutes.
+    const MIN_WAKE_BEFORE_NIGHT_MIN = 60;
+    const minBedtimeAfterNap = new Date(
+      lastNapForBedtime.endTime.getTime() + MIN_WAKE_BEFORE_NIGHT_MIN * 60_000,
+    );
+    if (minBedtimeAfterNap > bedtimeDate) {
+      bedtimeDate = minBedtimeAfterNap;
     }
   }
 
