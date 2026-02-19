@@ -328,24 +328,23 @@ export function analyzeSleep(
     } else {
       // Normal nap prediction using positional interval or fallback chain
 
-      // Strategy A: if a nap was logged today, prioritize inter-nap interval
       if (lastTodayNap?.endTime) {
-        // A1: positional inter-nap interval (best)
+        // ── Stratégies A : sieste déjà saisie aujourd'hui ──
+        // B et C ne s'appliquent pas ici — elles ignoreraient la sieste existante.
+
+        // A1: intervalle positionnel (meilleur)
         const positionalInterval = positionalInterNap.get(napsToday - 1);
         if (positionalInterval !== undefined) {
           let interval = positionalInterval;
-          // Short-nap fast-retry: reduce by 30% if last nap was short
           if (lastNapShort) {
             interval = interval * 0.7;
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromNap = new Date(lastTodayNap.endTime.getTime() + interval * 60_000);
-          if (fromNap > now) {
-            predictedTime = fromNap;
-          }
+          if (fromNap > now) predictedTime = fromNap;
         }
 
-        // A2: global median inter-nap
+        // A2: médiane globale inter-siestes
         if (!predictedTime && medianInterNap !== null) {
           let interval = medianInterNap;
           if (lastNapShort) {
@@ -353,12 +352,10 @@ export function analyzeSleep(
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromNap = new Date(lastTodayNap.endTime.getTime() + interval * 60_000);
-          if (fromNap > now) {
-            predictedTime = fromNap;
-          }
+          if (fromNap > now) predictedTime = fromNap;
         }
 
-        // A3: fallback to wake window
+        // A3: fenêtre d'éveil par défaut
         if (!predictedTime) {
           let wakeWindowMin = (WAKE_WINDOWS.optimalMin + WAKE_WINDOWS.optimalMax) / 2;
           if (lastNapShort) {
@@ -366,35 +363,39 @@ export function analyzeSleep(
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromWake = new Date(lastTodayNap.endTime.getTime() + wakeWindowMin * 60_000);
-          if (fromWake > now) {
-            predictedTime = fromWake;
-          }
+          if (fromWake > now) predictedTime = fromWake;
         }
-      }
 
-      // Strategy B: no nap today yet — use feed + median latency
-      if (!predictedTime && mostRecentFeed && medianLatency !== null) {
-        const fromFeed = new Date(
-          mostRecentFeed.timestamp.getTime() + medianLatency * 60_000,
-        );
-        if (fromFeed > now) {
-          predictedTime = fromFeed;
+        // A4: toutes les stratégies dans le passé → sieste en retard
+        if (!predictedTime) {
+          predictedTime = new Date(now.getTime() + 15 * 60_000);
+          hint = 'Sieste en retard — dès que possible';
         }
-      }
+      } else {
+        // ── Stratégies B/C : aucune sieste aujourd'hui (projections pures) ──
 
-      // Strategy C: fallback to default nap windows
-      if (!predictedTime) {
-        const currentH = now.getHours() + now.getMinutes() / 60;
-        for (let i = napsToday; i < defaults.bestNapTimes.length; i++) {
-          const window = defaults.bestNapTimes[i];
-          if (currentH < window.endH) {
-            const midH = (window.startH + window.endH) / 2;
-            predictedTime = new Date(now);
-            predictedTime.setHours(Math.floor(midH), Math.round((midH % 1) * 60), 0, 0);
-            if (predictedTime <= now) {
-              predictedTime = new Date(now.getTime() + 15 * 60_000);
+        // B: dernier repas + latence médiane repas→sieste
+        if (mostRecentFeed && medianLatency !== null) {
+          const fromFeed = new Date(
+            mostRecentFeed.timestamp.getTime() + medianLatency * 60_000,
+          );
+          if (fromFeed > now) predictedTime = fromFeed;
+        }
+
+        // C: créneaux par défaut (bestNapTimes)
+        if (!predictedTime) {
+          const currentH = now.getHours() + now.getMinutes() / 60;
+          for (let i = napsToday; i < defaults.bestNapTimes.length; i++) {
+            const window = defaults.bestNapTimes[i];
+            if (currentH < window.endH) {
+              const midH = (window.startH + window.endH) / 2;
+              predictedTime = new Date(now);
+              predictedTime.setHours(Math.floor(midH), Math.round((midH % 1) * 60), 0, 0);
+              if (predictedTime <= now) {
+                predictedTime = new Date(now.getTime() + 15 * 60_000);
+              }
+              break;
             }
-            break;
           }
         }
       }
