@@ -726,29 +726,45 @@ export const BABY_FACTS_6M: BabyFact[] = [
 ];
 
 /**
+ * Seeded LCG (Knuth) — returns a deterministic pseudo-random float in [0, 1).
+ */
+function seededRandom(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/**
  * Pick 2 facts for the current hour.
- * Uses day-of-year as offset so every hour in the same day gets
- * a unique pair, and different days rotate through different facts.
+ * Every day the full pool is Fisher-Yates shuffled with a day-based seed,
+ * so every fact rotates fairly and no fact is stranded for multiple days.
+ * Each hour picks a unique pair from the shuffled sequence.
  */
 export function getHourlyFacts(hour: number): BabyFact[] {
   const now = new Date();
   const dayOfYear = Math.floor(
     (now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000,
   );
-  const pool = BABY_FACTS_6M;
+
+  // Fisher-Yates shuffle seeded by day — different ordering every day
+  const pool = [...BABY_FACTS_6M];
   const n = pool.length;
+  const rand = seededRandom(dayOfYear * 7919 + 42);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
 
-  // Deterministic shuffle seed based on day — each day gets a different ordering
-  const daySeed = dayOfYear * 31;
+  // Each hour picks a unique consecutive pair from the shuffled pool
+  const idx1 = (hour * 2) % n;
+  const idx2 = (hour * 2 + 1) % n;
 
-  // Pick index for this hour, guaranteed unique across hours in the same day
-  const idx1 = (daySeed + hour * 3 + 1) % n;
-  let idx2 = (daySeed + hour * 3 + 2) % n;
-  if (idx2 === idx1) idx2 = (idx2 + 1) % n;
-
-  // Ensure different categories when possible
   const fact1 = pool[idx1];
   let fact2 = pool[idx2];
+
+  // Ensure different categories when possible
   if (fact1.category === fact2.category && n > 2) {
     for (let i = 1; i < n; i++) {
       const candidate = pool[(idx2 + i) % n];
