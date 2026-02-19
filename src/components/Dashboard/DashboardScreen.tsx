@@ -15,7 +15,7 @@ import { SleepLog } from '../QuickLog/SleepLog';
 import { NightModule } from '../Night/NightModule';
 import { NightRecapCard } from '../Night/NightRecap';
 import type { BabyName } from '../../types';
-import { PROFILES } from '../../data/knowledge';
+import { PROFILES, BABY_COLORS } from '../../data/knowledge';
 
 export function DashboardScreen() {
   const {
@@ -88,29 +88,48 @@ export function DashboardScreen() {
 
         {/* Accuracy block */}
         {(accuracies.colette !== null || accuracies.isaure !== null) && (
-          <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4">
-            <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Précision du jour</p>
-            <div className="grid grid-cols-2 gap-2">
-              {(['colette', 'isaure'] as BabyName[]).map((baby) => {
-                const acc = accuracies[baby];
-                const color =
-                  acc === null
-                    ? 'text-gray-300'
-                    : acc >= 0.8
-                      ? 'text-green-600'
-                      : acc >= 0.6
-                        ? 'text-yellow-500'
-                        : 'text-orange-500';
-                return (
-                  <div key={baby} className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">{PROFILES[baby].name}</span>
-                    <span className={`text-xl font-bold ${color}`}>
-                      {acc !== null ? `${Math.round(acc * 100)}%` : '—'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+            {(['colette', 'isaure'] as BabyName[]).map((baby) => {
+              const acc = accuracies[baby];
+              const babyColor = BABY_COLORS[baby];
+              const scoreColor =
+                acc === null
+                  ? '#9ca3af'
+                  : acc >= 0.8
+                    ? '#16a34a'
+                    : acc >= 0.6
+                      ? '#d97706'
+                      : '#ea580c';
+              return (
+                <div
+                  key={baby}
+                  className="bg-white rounded-xl p-3 sm:p-4 text-center"
+                  style={{ borderTop: `3px solid ${babyColor}` }}
+                >
+                  <p
+                    className="text-[10px] font-semibold uppercase tracking-widest mb-2"
+                    style={{ color: babyColor }}
+                  >
+                    {PROFILES[baby].name}
+                  </p>
+                  <p
+                    className="text-4xl sm:text-5xl font-bold leading-none"
+                    style={{ color: scoreColor }}
+                  >
+                    {acc !== null ? `${Math.round(acc * 100)}%` : '—'}
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-2">précision repas & dodo</p>
+                  {acc !== null && (
+                    <div className="w-full h-1 bg-gray-100 rounded-full mt-2.5">
+                      <div
+                        className="h-1 rounded-full"
+                        style={{ width: `${Math.round(acc * 100)}%`, backgroundColor: scoreColor }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
