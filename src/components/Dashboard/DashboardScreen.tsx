@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { RefreshCw, ClipboardList, Upload } from 'lucide-react';
+import { computeDayAccuracy } from '../../engine/accuracy';
 import { useStore } from '../../store';
 import { usePredictions } from '../../hooks/usePredictions';
 import { generateRecommendations } from '../../data/recommendations';
@@ -21,6 +23,7 @@ export function DashboardScreen() {
     patterns,
     sleepAnalyses,
     feeds,
+    sleeps,
     lastUpdated,
     refreshPredictions,
   } = usePredictions();
@@ -30,6 +33,15 @@ export function DashboardScreen() {
   const feedSleepInsights = useStore((s) => s.feedSleepInsights);
 
   const now = new Date();
+
+  // Accuracy scores
+  const accuracies = useMemo(() => {
+    const n = new Date();
+    return {
+      colette: computeDayAccuracy(feeds, sleeps, 'colette', n),
+      isaure: computeDayAccuracy(feeds, sleeps, 'isaure', n),
+    };
+  }, [feeds, sleeps]);
 
   // Recommendations
   const recommendations = generateRecommendations(feeds, patterns, predictions);
@@ -82,13 +94,13 @@ export function DashboardScreen() {
         {/* Baby cards */}
         <div className="grid grid-cols-2 gap-2 sm:gap-3">
           {(['colette', 'isaure'] as BabyName[]).map((baby) => (
-            <BabyCard key={baby} baby={baby} prediction={predictions[baby]} />
+            <BabyCard key={baby} baby={baby} prediction={predictions[baby]} accuracy={accuracies[baby]} />
           ))}
         </div>
 
         {/* Sleep log + panel */}
         <SleepLog />
-        <SleepPanel analyses={sleepAnalyses} feedSleepInsights={feedSleepInsights} hour={now.getHours()} />
+        <SleepPanel analyses={sleepAnalyses} feedSleepInsights={feedSleepInsights} hour={now.getHours()} accuracies={accuracies} />
 
         {/* Recommendations */}
         <Recommendations recommendations={recommendations} />

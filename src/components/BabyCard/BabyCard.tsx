@@ -3,12 +3,19 @@ import { fr } from 'date-fns/locale';
 import type { BabyName, Prediction } from '../../types';
 import { PROFILES, BABY_COLORS } from '../../data/knowledge';
 
+function accuracyColor(score: number): string {
+  if (score >= 0.8) return 'text-green-600';
+  if (score >= 0.6) return 'text-yellow-500';
+  return 'text-orange-500';
+}
+
 interface BabyCardProps {
   baby: BabyName;
   prediction: Prediction | null;
+  accuracy: number | null;
 }
 
-export function BabyCard({ baby, prediction }: BabyCardProps) {
+export function BabyCard({ baby, prediction, accuracy }: BabyCardProps) {
   const profile = PROFILES[baby];
   const color = BABY_COLORS[baby];
 
@@ -40,6 +47,16 @@ export function BabyCard({ baby, prediction }: BabyCardProps) {
       className="bg-white rounded-xl border-2 p-3 sm:p-4 space-y-2 sm:space-y-3"
       style={{ borderColor: color }}
     >
+      {/* Accuracy score — topmost element */}
+      {accuracy !== null && (
+        <div className="flex items-baseline gap-1">
+          <span className={`text-2xl font-bold leading-none ${accuracyColor(accuracy)}`}>
+            {Math.round(accuracy * 100)}%
+          </span>
+          <span className="text-[10px] text-gray-400 uppercase tracking-wide">précision</span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-gray-800">{profile.name}</h3>
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${confidenceColor}`}>
