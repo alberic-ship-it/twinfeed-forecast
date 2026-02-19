@@ -220,8 +220,7 @@ export const useStore = create<Store>((set, get) => ({
       set({ feeds: allFeeds, dataLoaded: true });
     }
 
-    get().refreshPredictions();
-    _refreshInsights(get, set);
+    get().refreshPredictions(); // _refreshInsights est déjà appelé en interne
 
     // Push to server
     pushEntries([feed], []).catch(() => {});
@@ -366,8 +365,13 @@ export const useStore = create<Store>((set, get) => ({
     const { feeds, sleeps, nightSessions } = get();
     const now = new Date();
 
-    // Skip if data hasn't changed and last refresh was recent
-    const refreshKey = `${feeds.length}|${sleeps.length}`;
+    // Skip if data hasn't changed and last refresh was recent.
+    // La clé intègre longueur + premier/dernier ID pour détecter les
+    // suppressions/ajouts qui ne changent pas la longueur totale.
+    const firstFeedId = feeds.length > 0 ? feeds[0].id : '';
+    const lastFeedId = feeds.length > 0 ? feeds[feeds.length - 1].id : '';
+    const lastSleepId = sleeps.length > 0 ? sleeps[sleeps.length - 1].id : '';
+    const refreshKey = `${feeds.length}|${firstFeedId}|${lastFeedId}|${sleeps.length}|${lastSleepId}`;
     if (refreshKey === _lastRefreshKey && now.getTime() - _lastRefreshTime < REFRESH_DEBOUNCE_MS) {
       return;
     }

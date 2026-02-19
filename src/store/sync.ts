@@ -1,6 +1,17 @@
 import type { FeedRecord, SleepRecord, BabyName, NightSession } from '../types';
 
 const API_URL = '/.netlify/functions/sync';
+const FETCH_TIMEOUT_MS = 8_000;
+
+/** fetch avec timeout — évite d'attendre indéfiniment si Netlify est lent */
+async function fetchWithTimeout(url: string, opts?: RequestInit): Promise<Response> {
+  const res = await fetch(url, {
+    ...opts,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status} on ${opts?.method ?? 'GET'} ${url}`);
+  return res;
+}
 
 interface RawData {
   feeds: Record<string, unknown>[];
@@ -42,7 +53,7 @@ export async function fetchSharedEntries(): Promise<{
   feeds: FeedRecord[];
   sleeps: SleepRecord[];
 }> {
-  const res = await fetch(API_URL);
+  const res = await fetchWithTimeout(API_URL);
   const data: RawData = await res.json();
   return {
     feeds: deserializeFeeds(data.feeds),
@@ -55,7 +66,7 @@ export async function pushEntries(
   feeds: FeedRecord[],
   sleeps: SleepRecord[],
 ): Promise<void> {
-  await fetch(API_URL, {
+  await fetchWithTimeout(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -67,12 +78,12 @@ export async function pushEntries(
 
 /** Clear all shared entries on the server. */
 export async function clearSharedEntries(): Promise<void> {
-  await fetch(API_URL, { method: 'DELETE' });
+  await fetchWithTimeout(API_URL, { method: 'DELETE' });
 }
 
 /** Delete specific entries by ID on the server. */
 export async function deleteServerEntries(opts: { deleteSleepIds?: string[]; deleteFeedIds?: string[] }): Promise<void> {
-  await fetch(API_URL, {
+  await fetchWithTimeout(API_URL, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(opts),
@@ -117,7 +128,7 @@ function deserializeNightSession(raw: Record<string, unknown> | null): NightSess
 
 /** Push night sessions to server. */
 export async function pushNightSessions(sessions: Record<BabyName, NightSession | null>): Promise<void> {
-  await fetch(NIGHT_URL, {
+  await fetchWithTimeout(NIGHT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(serializeNightSessions(sessions)),
@@ -126,7 +137,7 @@ export async function pushNightSessions(sessions: Record<BabyName, NightSession 
 
 /** Fetch night sessions from server. */
 export async function fetchNightSessions(): Promise<Record<BabyName, NightSession | null>> {
-  const res = await fetch(NIGHT_URL);
+  const res = await fetchWithTimeout(NIGHT_URL);
   const data = await res.json() as Record<string, Record<string, unknown> | null>;
   return {
     colette: deserializeNightSession(data.colette ?? null),

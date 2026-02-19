@@ -8,13 +8,9 @@ import type {
   VolumePrediction,
   Explanation,
 } from '../types';
-import { PROFILES } from '../data/knowledge';
-import { INTERVAL_FILTER, getSlotId } from '../data/knowledge';
+import { PROFILES, INTERVAL_FILTER, getSlotId } from '../data/knowledge';
 import { detectPatterns } from './patterns';
 import { recencyWeight, weightedMedian, filterRecentFeeds, filterRecentSleeps } from './recency';
-
-// Re-export for backwards compatibility (consumers may import from predictor)
-export { INTERVAL_FILTER, getSlotId };
 
 /**
  * Compute the weighted median latency (in minutes) between nap wake-up

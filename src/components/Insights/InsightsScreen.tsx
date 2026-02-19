@@ -1,7 +1,7 @@
 import { ArrowLeft } from 'lucide-react';
 import { useStore } from '../../store';
-import { PROFILES, BABY_COLORS } from '../../data/knowledge';
-import { INTERVAL_FILTER, computeSlotVolume } from '../../engine/predictor';
+import { PROFILES, BABY_COLORS, INTERVAL_FILTER } from '../../data/knowledge';
+import { computeSlotVolume } from '../../engine/predictor';
 import { recencyWeight, weightedMedian } from '../../engine/recency';
 import type { BabyName, FeedRecord } from '../../types';
 

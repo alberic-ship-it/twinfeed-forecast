@@ -85,13 +85,6 @@ export const BABY_COLORS: Record<BabyName, string> = {
   isaure: '#2DD4BF',  // Bleu/Teal
 };
 
-export const SYNC_THRESHOLDS = {
-  synchronized: 20,       // <20 min
-  slightlyOffset: 45,     // 20-45 min
-  desyncAlert: 60,        // >60 min → alert
-  resyncTrigger: 45,      // >45 min → suggest resync
-};
-
 export const BEST_SYNC_WINDOWS = [
   { start: 7, end: 8, label: 'Réveil' },
   { start: 10, end: 11, label: 'Mi-matinée' },
