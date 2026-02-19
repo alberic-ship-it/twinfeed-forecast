@@ -44,6 +44,7 @@ interface Store {
   logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number) => void;
   logSleep: (baby: BabyName, durationMin: number, endTime?: Date) => void;
   deleteSleep: (id: string) => void;
+  deleteFeed: (id: string) => void;
   startNight: (baby: BabyName) => void;
   endNight: (baby: BabyName) => void;
   dismissNightRecap: (baby: BabyName) => void;
@@ -246,6 +247,18 @@ export const useStore = create<Store>((set, get) => ({
 
     // Delete from server too
     deleteServerEntries({ deleteSleepIds: [id] }).catch(() => {});
+  },
+
+  deleteFeed: (id) => {
+    const { feeds } = get();
+    const filtered = feeds.filter((f) => f.id !== id);
+    if (filtered.length === feeds.length) return; // not found
+    set({ feeds: filtered });
+    _lastRefreshKey = '';
+    get().refreshPredictions();
+    _refreshInsights(get, set);
+
+    deleteServerEntries({ deleteFeedIds: [id] }).catch(() => {});
   },
 
   startNight: (baby) => {

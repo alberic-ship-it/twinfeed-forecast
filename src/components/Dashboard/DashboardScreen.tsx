@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { RefreshCw, BarChart3, RotateCcw, Upload } from 'lucide-react';
+import { RefreshCw, ClipboardList, Upload } from 'lucide-react';
 import { useStore } from '../../store';
 import { usePredictions } from '../../hooks/usePredictions';
 import { generateRecommendations } from '../../data/recommendations';
@@ -27,7 +27,6 @@ export function DashboardScreen() {
 
   const setScreen = useStore((s) => s.setScreen);
   const dismissAlert = useStore((s) => s.dismissAlert);
-  const reset = useStore((s) => s.reset);
   const feedSleepInsights = useStore((s) => s.feedSleepInsights);
 
   const now = new Date();
@@ -57,18 +56,11 @@ export function DashboardScreen() {
               <RefreshCw size={20} />
             </button>
             <button
-              onClick={() => setScreen('insights')}
+              onClick={() => setScreen('entries')}
               className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 active:text-gray-800 transition-colors"
-              title="Insights"
+              title="Saisies du jour"
             >
-              <BarChart3 size={20} />
-            </button>
-            <button
-              onClick={reset}
-              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 active:text-gray-800 transition-colors"
-              title="Réinitialiser"
-            >
-              <RotateCcw size={20} />
+              <ClipboardList size={20} />
             </button>
           </div>
         </div>

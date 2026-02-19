@@ -25,7 +25,7 @@ export type PatternId =
   | 'GROWTH'
   | 'BREAST_RATIO_SHIFT';
 
-export type Screen = 'import' | 'dashboard' | 'insights';
+export type Screen = 'import' | 'dashboard' | 'entries';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Data Records
