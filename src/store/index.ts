@@ -174,14 +174,26 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   logFeed: (baby, type, ml, timestamp) => {
+    const ts = timestamp ?? new Date();
+    const { feeds, nightSessions } = get();
+
+    // Guard: reject near-duplicate entries (same baby, type, volume within 60s)
+    const isDuplicate = feeds.some(
+      (f) =>
+        f.baby === baby &&
+        f.type === type &&
+        f.volumeMl === (ml ?? 0) &&
+        Math.abs(f.timestamp.getTime() - ts.getTime()) < 60_000
+    );
+    if (isDuplicate) return;
+
     const feed: FeedRecord = {
       id: crypto.randomUUID(),
       baby,
-      timestamp: timestamp ?? new Date(),
+      timestamp: ts,
       type,
       volumeMl: ml ?? 0,
     };
-    const { feeds, nightSessions } = get();
     const allFeeds = [...feeds, feed].sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
     );
@@ -209,6 +221,7 @@ export const useStore = create<Store>((set, get) => ({
     }
 
     get().refreshPredictions();
+    _refreshInsights(get, set);
 
     // Push to server
     pushEntries([feed], []).catch(() => {});

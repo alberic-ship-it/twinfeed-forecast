@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useStore } from '../../store';
 import { PROFILES, BABY_COLORS } from '../../data/knowledge';
 import type { BabyName } from '../../types';
@@ -26,6 +26,9 @@ export function QuickLog() {
   const [showBreast, setShowBreast] = useState(false);
   const [mlValue, setMlValue] = useState(130);
   const [customTimeStr, setCustomTimeStr] = useState('');
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  // Ref-based guard: prevents double-submission from rapid taps
+  const submittingRef = useRef(false);
 
   const handleBabyTap = (baby: BabyName) => {
     if (selectedBaby === baby) {
@@ -49,21 +52,34 @@ export function QuickLog() {
     setShowBreast(true);
   };
 
+  const showSaved = (msg: string) => {
+    setSavedMsg(msg);
+    setTimeout(() => setSavedMsg(null), 3000);
+  };
+
   const handleSubmitBottle = () => {
-    if (!selectedBaby) return;
+    if (!selectedBaby || submittingRef.current) return;
+    submittingRef.current = true;
     logFeed(selectedBaby, 'bottle', mlValue, buildTimestamp(customTimeStr));
+    const msg = `${PROFILES[selectedBaby].name} · ${mlValue} ml enregistré`;
     setSelectedBaby(null);
     setShowBottle(false);
     setMlValue(130);
     setCustomTimeStr('');
+    submittingRef.current = false;
+    showSaved(msg);
   };
 
   const handleSubmitBreast = () => {
-    if (!selectedBaby) return;
+    if (!selectedBaby || submittingRef.current) return;
+    submittingRef.current = true;
     logFeed(selectedBaby, 'breast', undefined, buildTimestamp(customTimeStr));
+    const msg = `${PROFILES[selectedBaby].name} · Tétée enregistrée`;
     setSelectedBaby(null);
     setShowBreast(false);
     setCustomTimeStr('');
+    submittingRef.current = false;
+    showSaved(msg);
   };
 
   const handleCancel = () => {
@@ -75,7 +91,13 @@ export function QuickLog() {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">
-      <p className="text-xs text-gray-400 uppercase tracking-wide">Enregistrer un repas</p>
+      {savedMsg ? (
+        <p className="text-xs font-medium text-green-600 flex items-center gap-1">
+          <span>✓</span> {savedMsg}
+        </p>
+      ) : (
+        <p className="text-xs text-gray-400 uppercase tracking-wide">Enregistrer un repas</p>
+      )}
 
       {/* Baby buttons */}
       <div className="grid grid-cols-2 gap-2">
