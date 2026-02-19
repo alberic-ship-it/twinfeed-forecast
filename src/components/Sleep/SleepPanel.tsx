@@ -7,23 +7,10 @@ import type { SleepAnalysis } from '../../engine/sleep';
 import { useStore } from '../../store';
 import { PROFILES, getHourlyFacts } from '../../data/knowledge';
 
-const ACCURACY_COLORS: Record<string, string> = {
-  good: 'text-green-600',
-  fair: 'text-yellow-500',
-  low: 'text-orange-500',
-};
-
-function accuracyColor(score: number): string {
-  if (score >= 0.8) return ACCURACY_COLORS.good;
-  if (score >= 0.6) return ACCURACY_COLORS.fair;
-  return ACCURACY_COLORS.low;
-}
-
 interface SleepPanelProps {
   analyses: Record<BabyName, SleepAnalysis>;
   feedSleepInsights: Record<BabyName, FeedSleepAnalysis | null>;
   hour: number;
-  accuracies: Record<BabyName, number | null>;
 }
 
 const confidenceColors: Record<InsightConfidence, { dot: string; text: string }> = {
@@ -91,7 +78,7 @@ function pickHourlyInsight(insights: FeedSleepAnalysis | null, hour: number) {
   return all[idx];
 }
 
-export function SleepPanel({ analyses, feedSleepInsights, hour, accuracies }: SleepPanelProps) {
+export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProps) {
   const startNight = useStore((s) => s.startNight);
   const nightSessions = useStore((s) => s.nightSessions);
 
@@ -113,19 +100,11 @@ export function SleepPanel({ analyses, feedSleepInsights, hour, accuracies }: Sl
           const analysis = analyses[baby];
           const profile = PROFILES[baby];
 
-          const acc = accuracies[baby];
           return (
             <div key={baby} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">
-                  {profile.name}
-                </span>
-                {acc !== null && (
-                  <span className={`text-sm font-bold ${accuracyColor(acc)}`}>
-                    {Math.round(acc * 100)}%
-                  </span>
-                )}
-              </div>
+              <span className="text-sm font-medium text-gray-700">
+                {profile.name}
+              </span>
 
               {/* Next nap — affiché pour tous les statuts diurnes (y compris naps_done si <17h30) */}
               {analysis.nextNap && analysis.sleepStatus !== 'night_active' && (

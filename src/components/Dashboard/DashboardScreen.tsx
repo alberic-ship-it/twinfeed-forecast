@@ -15,6 +15,7 @@ import { SleepLog } from '../QuickLog/SleepLog';
 import { NightModule } from '../Night/NightModule';
 import { NightRecapCard } from '../Night/NightRecap';
 import type { BabyName } from '../../types';
+import { PROFILES } from '../../data/knowledge';
 
 export function DashboardScreen() {
   const {
@@ -85,6 +86,34 @@ export function DashboardScreen() {
         {/* Night recap (after night ends) */}
         <NightRecapCard />
 
+        {/* Accuracy block */}
+        {(accuracies.colette !== null || accuracies.isaure !== null) && (
+          <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4">
+            <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Précision du jour</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(['colette', 'isaure'] as BabyName[]).map((baby) => {
+                const acc = accuracies[baby];
+                const color =
+                  acc === null
+                    ? 'text-gray-300'
+                    : acc >= 0.8
+                      ? 'text-green-600'
+                      : acc >= 0.6
+                        ? 'text-yellow-500'
+                        : 'text-orange-500';
+                return (
+                  <div key={baby} className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">{PROFILES[baby].name}</span>
+                    <span className={`text-xl font-bold ${color}`}>
+                      {acc !== null ? `${Math.round(acc * 100)}%` : '—'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Quick log */}
         <QuickLog />
 
@@ -94,13 +123,13 @@ export function DashboardScreen() {
         {/* Baby cards */}
         <div className="grid grid-cols-2 gap-2 sm:gap-3">
           {(['colette', 'isaure'] as BabyName[]).map((baby) => (
-            <BabyCard key={baby} baby={baby} prediction={predictions[baby]} accuracy={accuracies[baby]} />
+            <BabyCard key={baby} baby={baby} prediction={predictions[baby]} />
           ))}
         </div>
 
         {/* Sleep log + panel */}
         <SleepLog />
-        <SleepPanel analyses={sleepAnalyses} feedSleepInsights={feedSleepInsights} hour={now.getHours()} accuracies={accuracies} />
+        <SleepPanel analyses={sleepAnalyses} feedSleepInsights={feedSleepInsights} hour={now.getHours()} />
 
         {/* Recommendations */}
         <Recommendations recommendations={recommendations} />
