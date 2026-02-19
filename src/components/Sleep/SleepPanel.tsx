@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Lightbulb, BookOpen, CheckCircle, Moon } from 'lucide-react';
+import { Lightbulb, BookOpen, Moon } from 'lucide-react';
 import type { BabyName, FeedSleepAnalysis, InsightConfidence } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
 import { useStore } from '../../store';
@@ -124,18 +124,15 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                 </div>
               )}
 
-              {/* Naps done — enriched card */}
+              {/* Naps summary — quota atteint */}
               {analysis.sleepStatus === 'naps_done' && (
-                <div className="bg-green-50 rounded-lg p-2.5">
-                  <div className="flex items-center gap-1">
-                    <CheckCircle className="text-green-500" size={11} />
-                    <p className="text-[11px] text-green-500 uppercase tracking-wide font-medium">Siestes terminées</p>
-                  </div>
-                  <p className="text-xl sm:text-2xl font-bold text-green-700 leading-tight">
+                <div className="bg-gray-50 rounded-lg p-2.5">
+                  <p className="text-[11px] text-gray-400 uppercase tracking-wide font-medium">Siestes du jour</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-700 leading-tight">
                     {analysis.napsToday} sieste{analysis.napsToday > 1 ? 's' : ''}
                   </p>
-                  <p className="text-[11px] text-green-400 mt-0.5">
-                    {formatDuration(analysis.totalSleepToday)} de sommeil · moy. {analysis.napsToday > 0 ? Math.round(analysis.totalSleepToday / analysis.napsToday) : 0} min
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    {formatDuration(analysis.totalSleepToday)} · moy. {analysis.napsToday > 0 ? Math.round(analysis.totalSleepToday / analysis.napsToday) : 0} min
                   </p>
                 </div>
               )}
