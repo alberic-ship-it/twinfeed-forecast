@@ -124,15 +124,15 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                 </div>
               )}
 
-              {/* Naps summary — quota atteint */}
-              {analysis.sleepStatus === 'naps_done' && (
+              {/* Siestes du jour — affiché dès qu'une sieste a eu lieu */}
+              {analysis.napsToday > 0 && (
                 <div className="bg-gray-50 rounded-lg p-2.5">
                   <p className="text-[11px] text-gray-400 uppercase tracking-wide font-medium">Siestes du jour</p>
                   <p className="text-xl sm:text-2xl font-bold text-gray-700 leading-tight">
                     {analysis.napsToday} sieste{analysis.napsToday > 1 ? 's' : ''}
                   </p>
                   <p className="text-[11px] text-gray-400 mt-0.5">
-                    {formatDuration(analysis.totalSleepToday)} · moy. {analysis.napsToday > 0 ? Math.round(analysis.totalSleepToday / analysis.napsToday) : 0} min
+                    {formatDuration(analysis.totalSleepToday)} · moy. {Math.round(analysis.totalSleepToday / analysis.napsToday)} min
                   </p>
                 </div>
               )}
