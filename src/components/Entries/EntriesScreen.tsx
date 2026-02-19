@@ -32,6 +32,8 @@ export function EntriesScreen() {
   const setScreen = useStore((s) => s.setScreen);
   const feeds = useStore((s) => s.feeds);
   const sleeps = useStore((s) => s.sleeps);
+  const nightSessions = useStore((s) => s.nightSessions);
+  const nightRecaps = useStore((s) => s.nightRecaps);
   const deleteFeed = useStore((s) => s.deleteFeed);
   const deleteSleep = useStore((s) => s.deleteSleep);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -141,8 +143,69 @@ export function EntriesScreen() {
     );
   }
 
+  // Night data: active sessions + recaps from the last 24h
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const recentRecaps = nightRecaps.filter((r) => r.session.startTime >= yesterday);
+
+  function renderNightBabySection(baby: BabyName) {
+    const activeSession = nightSessions[baby];
+    const recap = recentRecaps.filter((r) => r.baby === baby).sort(
+      (a, b) => b.session.startTime.getTime() - a.session.startTime.getTime(),
+    );
+    const sessions = activeSession
+      ? [activeSession, ...recap.map((r) => r.session)]
+      : recap.map((r) => r.session);
+
+    return (
+      <div key={baby}>
+        <p className="text-xs font-medium text-gray-500 mb-1">{PROFILES[baby].name}</p>
+        {sessions.length === 0 ? (
+          <p className="text-xs text-gray-300 italic pl-1">Aucune nuit</p>
+        ) : (
+          <div className="space-y-2">
+            {sessions.map((session) => {
+              const isActive = !session.endTime;
+              const durationMin = session.endTime
+                ? Math.round((session.endTime.getTime() - session.startTime.getTime()) / 60000)
+                : Math.round((Date.now() - session.startTime.getTime()) / 60000);
+              return (
+                <div key={session.id} className="pl-1 space-y-1">
+                  <p className="text-xs text-gray-500">
+                    <span className="text-gray-400">{formatTime(session.startTime)}</span>
+                    {session.endTime ? (
+                      <> → <span className="text-gray-400">{formatTime(session.endTime)}</span></>
+                    ) : (
+                      <> — <span className="text-indigo-400 font-medium">en cours</span></>
+                    )}
+                    {' · '}{formatDuration(durationMin)}
+                    {session.feeds.length > 0 && <> · {session.feeds.length} repas</>}
+                    {isActive && !session.endTime && session.feeds.length === 0 && null}
+                  </p>
+                  {session.feeds.map((f) => (
+                    <p key={f.id} className="text-sm text-gray-600 pl-2">
+                      <span className="text-gray-400">{formatTime(f.timestamp)}</span>
+                      {' · '}
+                      {f.type === 'bottle' ? `Biberon ${f.volumeMl} ml` : 'Tétée'}
+                    </p>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const totalFeeds = todayFeeds.length;
   const totalSleeps = todaySleeps.length;
+  const totalNightFeeds = babies.reduce((sum, baby) => {
+    const active = nightSessions[baby]?.feeds.length ?? 0;
+    const recapFeeds = recentRecaps
+      .filter((r) => r.baby === baby)
+      .reduce((s, r) => s + r.session.feeds.length, 0);
+    return sum + active + recapFeeds;
+  }, 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -172,9 +235,16 @@ export function EntriesScreen() {
           {babies.map((baby) => renderBabySection(baby, todaySleeps, renderSleepRow))}
         </section>
 
+        {/* Nuits */}
+        <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">
+          <h3 className="text-xs text-gray-400 uppercase tracking-wide">Nuits</h3>
+          {babies.map((baby) => renderNightBabySection(baby))}
+        </section>
+
         {/* Footer counter */}
         <p className="text-xs text-gray-400 text-center">
           {totalFeeds} repas · {totalSleeps} sieste{totalSleeps > 1 ? 's' : ''}
+          {totalNightFeeds > 0 && <> · {totalNightFeeds} repas nuit</>}
         </p>
       </main>
     </div>
