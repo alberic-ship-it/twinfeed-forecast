@@ -161,11 +161,15 @@ export function analyzeSleep(
     const lastFeedAgoMin = lastFeed ? Math.round((now.getTime() - lastFeed.timestamp.getTime()) / 60_000) : null;
     const expectedWakeTime = new Date(activeNight.startTime.getTime() + medianNightDuration * 60_000);
 
-    // Still compute today's naps for context
+    // Still compute today's naps for context (même fenêtre étendue)
     const todayStart = new Date(now);
     todayStart.setHours(6, 0, 0, 0);
     const todayNaps = babySleeps.filter(
-      (s) => s.startTime >= todayStart && s.startTime.getHours() >= 6 && s.startTime.getHours() < 21,
+      (s) =>
+        s.startTime >= todayStart &&
+        s.startTime.getHours() >= 6 &&
+        s.startTime.getHours() < 23 &&
+        s.durationMin < NIGHT_SLEEP.minDurationMin,
     );
     const totalSleepToday = todayNaps.reduce((sum, s) => sum + s.durationMin, 0);
 
@@ -192,22 +196,29 @@ export function analyzeSleep(
     };
   }
 
-  // Today's naps (6h–21h)
+  // Today's naps (6h–23h, excluant les vrais sommeils de nuit)
+  // On inclut les courtes phases de sommeil tardives (ex: 21h-22h) qui ne sont
+  // pas des sommeils de nuit (durée < NIGHT_SLEEP.minDurationMin)
   const todayStart = new Date(now);
   todayStart.setHours(6, 0, 0, 0);
   const todayNaps = babySleeps.filter(
     (s) =>
       s.startTime >= todayStart &&
       s.startTime.getHours() >= 6 &&
-      s.startTime.getHours() < 21,
+      s.startTime.getHours() < 23 &&
+      s.durationMin < NIGHT_SLEEP.minDurationMin,
   );
 
   const totalSleepToday = todayNaps.reduce((sum, s) => sum + s.durationMin, 0);
   const napsToday = todayNaps.length;
 
   // ── Compute median feed→nap latency from history (weighted by recency) ──
+  // Même fenêtre que todayNaps : 6h-23h, excluant les vrais sommeils de nuit
   const allNaps = babySleeps.filter(
-    (s) => s.startTime.getHours() >= 6 && s.startTime.getHours() < 21,
+    (s) =>
+      s.startTime.getHours() >= 6 &&
+      s.startTime.getHours() < 23 &&
+      s.durationMin < NIGHT_SLEEP.minDurationMin,
   );
 
   const latencies: number[] = [];
@@ -265,13 +276,17 @@ export function analyzeSleep(
   const lastNapShort = lastTodayNap ? lastTodayNap.durationMin < 25 : false;
   const sleepDeficit = expectedDaySleepMin - totalSleepToday;
 
+  // rescue_nap uniquement quand le quota n'est PAS encore atteint ET que la
+  // dernière sieste était courte (→ réessai plus tôt). Une fois le quota atteint,
+  // on passe directement à naps_done — afficher un "rattrapage" après 3 siestes
+  // est confus et ne correspond pas à ce que les parents voient.
   let sleepStatus: SleepStatus;
-  if (napsToday < defaults.napsPerDay) {
-    sleepStatus = 'naps_remaining';
-  } else if (sleepDeficit > 30 || lastNapShort) {
+  if (napsToday >= defaults.napsPerDay) {
+    sleepStatus = 'naps_done';
+  } else if (lastNapShort) {
     sleepStatus = 'rescue_nap';
   } else {
-    sleepStatus = 'naps_done';
+    sleepStatus = 'naps_remaining';
   }
 
   // ── Next nap prediction ──

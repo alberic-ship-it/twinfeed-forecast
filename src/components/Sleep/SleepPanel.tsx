@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Lightbulb, BookOpen, CheckCircle, AlertTriangle, Moon } from 'lucide-react';
+import { Lightbulb, BookOpen, CheckCircle, Moon } from 'lucide-react';
 import type { BabyName, FeedSleepAnalysis, InsightConfidence } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
 import { useStore } from '../../store';
@@ -106,8 +106,8 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                 {profile.name}
               </span>
 
-              {/* Next nap — normal */}
-              {analysis.nextNap && analysis.sleepStatus === 'naps_remaining' && (
+              {/* Next nap — normal ou sieste courte (même style, pas de carte alarmante) */}
+              {analysis.nextNap && (analysis.sleepStatus === 'naps_remaining' || analysis.sleepStatus === 'rescue_nap') && (
                 <div className="bg-indigo-50 rounded-lg p-2.5">
                   <p className="text-[11px] text-indigo-400 uppercase tracking-wide font-medium">Prochaine sieste</p>
                   <p className="text-xl sm:text-2xl font-bold text-indigo-700 leading-tight">
@@ -118,27 +118,6 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                   </p>
                   {analysis.nextNap.hint && (
                     <p className="text-[11px] text-amber-500 mt-0.5">
-                      {analysis.nextNap.hint}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Rescue nap */}
-              {analysis.nextNap && analysis.sleepStatus === 'rescue_nap' && (
-                <div className="bg-orange-50 rounded-lg p-2.5">
-                  <div className="flex items-center gap-1">
-                    <AlertTriangle className="text-orange-400" size={11} />
-                    <p className="text-[11px] text-orange-400 uppercase tracking-wide font-medium">Rattrapage</p>
-                  </div>
-                  <p className="text-xl sm:text-2xl font-bold text-orange-600 leading-tight">
-                    {formatTime(analysis.nextNap.predictedTime)}
-                  </p>
-                  <p className="text-[11px] text-orange-300 mt-0.5">
-                    ±{analysis.nextNap.confidenceMin} min · ~{analysis.nextNap.estimatedDurationMin} min
-                  </p>
-                  {analysis.nextNap.hint && (
-                    <p className="text-[11px] text-orange-500 mt-0.5">
                       {analysis.nextNap.hint}
                     </p>
                   )}
