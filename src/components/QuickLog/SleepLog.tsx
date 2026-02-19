@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useStore } from '../../store';
 import { PROFILES, BABY_COLORS } from '../../data/knowledge';
 import type { BabyName } from '../../types';
@@ -11,15 +11,24 @@ export function SleepLog() {
   const [mode, setMode] = useState<'now' | 'custom'>('now');
   const [endHour, setEndHour] = useState(() => new Date().getHours());
   const [endMin, setEndMin] = useState(() => Math.round(new Date().getMinutes() / 5) * 5);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+
+  const showSaved = (msg: string) => {
+    setSavedMsg(msg);
+    setTimeout(() => setSavedMsg(null), 3000);
+  };
 
   const handleBabyTap = (baby: BabyName) => {
     setSelectedBaby(selectedBaby === baby ? null : baby);
   };
 
   const handleSubmit = () => {
-    if (!selectedBaby) return;
+    if (!selectedBaby || submittingRef.current) return;
     const totalMin = hours * 60 + minutes;
     if (totalMin === 0) return;
+
+    submittingRef.current = true;
 
     let endTime: Date | undefined;
     if (mode === 'custom') {
@@ -31,11 +40,16 @@ export function SleepLog() {
       }
     }
 
+    const durationLabel = hours > 0 ? `${hours}h${String(minutes).padStart(2, '0')}` : `${minutes} min`;
+    const msg = `${PROFILES[selectedBaby].name} · Sieste ${durationLabel} enregistrée`;
+
     logSleep(selectedBaby, totalMin, endTime);
     setSelectedBaby(null);
     setHours(0);
     setMinutes(35);
     setMode('now');
+    submittingRef.current = false;
+    showSaved(msg);
   };
 
   const handleCancel = () => {
@@ -47,7 +61,13 @@ export function SleepLog() {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">
-      <p className="text-xs text-gray-400 uppercase tracking-wide">Enregistrer un dodo</p>
+      {savedMsg ? (
+        <p className="text-xs font-medium text-green-600 flex items-center gap-1">
+          <span>✓</span> {savedMsg}
+        </p>
+      ) : (
+        <p className="text-xs text-gray-400 uppercase tracking-wide">Enregistrer un dodo</p>
+      )}
 
       {/* Baby buttons */}
       <div className="grid grid-cols-2 gap-2">
