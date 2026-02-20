@@ -1,18 +1,20 @@
 /**
  * Recency weighting utilities.
  *
- * Data is hard-capped to the last 60 days (DATA_WINDOW_DAYS).
- * Within that window: ≤7j = 3×, 8-21j = 2×, 22-60j = 1×.
+ * Data is hard-capped to the last 30 days (DATA_WINDOW_DAYS).
+ * Within that window: ≤7j = 5×, 8-21j = 2×, 22-30j = 1×.
+ * Tighter window + stronger recent weighting makes predictions adapt faster
+ * to pattern changes (growth spurts, schedule shifts, etc.).
  */
 
 import type { FeedRecord, SleepRecord } from '../types';
 
-/** Rolling window: only the last 60 days of data are used by engines. */
-export const DATA_WINDOW_DAYS = 60;
+/** Rolling window: only the last 30 days of data are used by engines. */
+export const DATA_WINDOW_DAYS = 30;
 
 export function recencyWeight(timestamp: Date, now: Date): number {
   const daysAgo = (now.getTime() - timestamp.getTime()) / 86_400_000;
-  if (daysAgo <= 7) return 3;
+  if (daysAgo <= 7) return 5;
   if (daysAgo <= 21) return 2;
   return 1;
 }

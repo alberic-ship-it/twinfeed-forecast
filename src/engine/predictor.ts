@@ -232,7 +232,10 @@ export function predictNextFeed(
     }
   }
 
-  const confidenceMinutes = Math.round(intervalH * 20);
+  const intervalStdH = computeSlotIntervalStd(targetSlot.id, baby, allFeeds, now);
+  const confidenceMinutes = intervalStdH !== null
+    ? Math.max(10, Math.round(intervalStdH * 60))
+    : Math.round(intervalH * 20);
   const p10Time = addMinutes(predictedTime, -confidenceMinutes);
   const p90Time = addMinutes(predictedTime, confidenceMinutes);
 
@@ -403,6 +406,50 @@ export function computeSlotInterval(
 }
 
 /**
+ * Compute the standard deviation of inter-feed intervals for a specific time slot.
+ * Used to derive data-driven confidence intervals: tightens as the baby's
+ * schedule becomes more regular, widens during disruptions.
+ * Returns null if fewer than 5 data points.
+ */
+export function computeSlotIntervalStd(
+  slotId: string,
+  baby: BabyName,
+  allFeeds: FeedRecord[],
+  now: Date,
+): number | null {
+  const profile = PROFILES[baby];
+  const babyFeeds = allFeeds
+    .filter((f) => f.baby === baby)
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+  if (babyFeeds.length < 2) return null;
+
+  const intervals: number[] = [];
+  const weights: number[] = [];
+  for (let i = 1; i < babyFeeds.length; i++) {
+    const prevFeed = babyFeeds[i - 1];
+    const prevHour = prevFeed.timestamp.getHours();
+    const prevSlot = profile.slots.find((s) => s.hours.includes(prevHour));
+    if (!prevSlot || prevSlot.id !== slotId) continue;
+    const diffH = (babyFeeds[i].timestamp.getTime() - prevFeed.timestamp.getTime()) / 3_600_000;
+    if (diffH > INTERVAL_FILTER.minH && diffH < INTERVAL_FILTER.maxH) {
+      const midpoint = new Date(
+        (prevFeed.timestamp.getTime() + babyFeeds[i].timestamp.getTime()) / 2,
+      );
+      intervals.push(diffH);
+      weights.push(recencyWeight(midpoint, now));
+    }
+  }
+
+  if (intervals.length < 5) return null;
+
+  const median = weightedMedian(intervals, weights);
+  const diffs = intervals.map((v) => (v - median) ** 2);
+  const std = Math.sqrt(diffs.reduce((s, d) => s + d, 0) / diffs.length);
+  return std;
+}
+
+/**
  * Compute the weighted mean volume for a specific time slot.
  */
 export function computeSlotVolume(
@@ -468,7 +515,10 @@ function predictFromProfile(
   const nextSlot = getSlotForHour(predictedTime.getHours(), baby);
   const nextIntervalH = cachedInterval(nextSlot.id);
   const vol = cachedVolume(nextSlot.id);
-  const confidenceMinutes = Math.round(nextIntervalH * 20);
+  const nextIntervalStdH = computeSlotIntervalStd(nextSlot.id, baby, allFeeds, now);
+  const confidenceMinutes = nextIntervalStdH !== null
+    ? Math.max(10, Math.round(nextIntervalStdH * 60))
+    : Math.round(nextIntervalH * 20);
   const slotLabel = SLOT_LABELS[nextSlot.id] ?? nextSlot.id;
 
   return {
