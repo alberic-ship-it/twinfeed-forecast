@@ -9,10 +9,12 @@ function computeMedian(values: number[]): number {
 }
 
 /**
- * Compute a combined accuracy score [0..1] for a baby's feed & nap predictions today.
- * Feed accuracy: % of today's inter-feed intervals within ±45 min of historical median.
- * Nap accuracy: % of today's nap durations within ±20 min of historical median.
- * Returns null if insufficient data (< 5 historical events or 0 today's events).
+ * Compute a combined accuracy score [0..1] for a baby's feed & nap predictions.
+ * Uses a rolling 24-hour window: events in the last 24h are compared against
+ * the historical median (everything older than 24h).
+ * Feed accuracy: % of recent inter-feed intervals within ±45 min of historical median.
+ * Nap accuracy: % of recent nap durations within ±20 min of historical median.
+ * Returns null if insufficient data (< 5 historical events or 0 recent events).
  */
 export function computeDayAccuracy(
   feeds: FeedRecord[],
@@ -20,16 +22,15 @@ export function computeDayAccuracy(
   baby: BabyName,
   now: Date,
 ): number | null {
-  const todayStart = new Date(now);
-  todayStart.setHours(5, 0, 0, 0);
+  const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   // ── Feeds ──────────────────────────────────────────────────────────────
   const babyFeeds = feeds
     .filter((f) => f.baby === baby)
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-  const historicalFeeds = babyFeeds.filter((f) => new Date(f.timestamp) < todayStart);
-  const todayFeeds = babyFeeds.filter((f) => new Date(f.timestamp) >= todayStart);
+  const historicalFeeds = babyFeeds.filter((f) => new Date(f.timestamp) < windowStart);
+  const todayFeeds = babyFeeds.filter((f) => new Date(f.timestamp) >= windowStart);
 
   const histIntervals: number[] = [];
   for (let i = 1; i < historicalFeeds.length; i++) {
@@ -60,8 +61,8 @@ export function computeDayAccuracy(
 
   // ── Naps ───────────────────────────────────────────────────────────────
   const babySleeps = sleeps.filter((s) => s.baby === baby && s.endTime);
-  const historicalSleeps = babySleeps.filter((s) => new Date(s.startTime) < todayStart);
-  const todaySleeps = babySleeps.filter((s) => new Date(s.startTime) >= todayStart);
+  const historicalSleeps = babySleeps.filter((s) => new Date(s.startTime) < windowStart);
+  const todaySleeps = babySleeps.filter((s) => new Date(s.startTime) >= windowStart);
 
   const histDurations = historicalSleeps
     .map((s) => s.durationMin)
