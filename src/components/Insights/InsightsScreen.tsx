@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useStore } from '../../store';
 import { PROFILES, BABY_COLORS, INTERVAL_FILTER } from '../../data/knowledge';
@@ -9,6 +10,41 @@ export function InsightsScreen() {
   const setScreen = useStore((s) => s.setScreen);
   const feeds = useStore((s) => s.feeds);
   const patterns = useStore((s) => s.patterns);
+
+  // Calculs lourds mémoïsés : filtres, weightedMedian, computeSlotVolume, computeAvgInterval
+  const babyStats = useMemo(() => {
+    const now = new Date();
+    return (['colette', 'isaure'] as BabyName[]).map((baby) => {
+      const babyFeeds = feeds.filter((f) => f.baby === baby);
+      const bottleFeeds = babyFeeds.filter((f) => f.type === 'bottle' && f.volumeMl > 0);
+      const breastFeeds = babyFeeds.filter((f) => f.type === 'breast');
+      const avgVolume =
+        bottleFeeds.length > 0
+          ? Math.round(
+              weightedMedian(
+                bottleFeeds.map((f) => f.volumeMl),
+                bottleFeeds.map((f) => recencyWeight(f.timestamp, now)),
+              ),
+            )
+          : 0;
+      const avgInterval = computeAvgInterval(babyFeeds);
+      const slotStats = PROFILES[baby].slots.map((slot) => {
+        const slotVol = computeSlotVolume(slot.id, baby, feeds, now);
+        const slotLabel =
+          slot.id === 'morning'
+            ? 'Matin'
+            : slot.id === 'midday'
+              ? 'Mi-journée'
+              : slot.id === 'afternoon'
+                ? 'Après-midi'
+                : slot.id === 'evening'
+                  ? 'Soir'
+                  : 'Nuit';
+        return { slot, slotAvg: slotVol.meanMl, slotLabel };
+      });
+      return { baby, bottleFeeds, breastFeeds, avgVolume, avgInterval, slotStats };
+    });
+  }, [feeds]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -27,26 +63,9 @@ export function InsightsScreen() {
 
       <main className="max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
         {/* Stats per baby */}
-        {(['colette', 'isaure'] as BabyName[]).map((baby) => {
+        {babyStats.map(({ baby, bottleFeeds, breastFeeds, avgVolume, avgInterval, slotStats }) => {
           const profile = PROFILES[baby];
           const color = BABY_COLORS[baby];
-          const babyFeeds = feeds.filter((f) => f.baby === baby);
-          const bottleFeeds = babyFeeds.filter((f) => f.type === 'bottle' && f.volumeMl > 0);
-          const breastFeeds = babyFeeds.filter((f) => f.type === 'breast');
-
-          const now = new Date();
-          const avgVolume =
-            bottleFeeds.length > 0
-              ? Math.round(
-                  weightedMedian(
-                    bottleFeeds.map((f) => f.volumeMl),
-                    bottleFeeds.map((f) => recencyWeight(f.timestamp, now)),
-                  ),
-                )
-              : 0;
-
-          const avgInterval = computeAvgInterval(babyFeeds);
-
           return (
             <div
               key={baby}
@@ -68,32 +87,15 @@ export function InsightsScreen() {
                   Moyenne par créneau
                 </p>
                 <div className="space-y-1">
-                  {profile.slots.map((slot) => {
-                    const slotVol = computeSlotVolume(slot.id, baby, feeds, now);
-                    const slotAvg = slotVol.meanMl;
-                    const slotLabel =
-                      slot.id === 'morning'
-                        ? 'Matin'
-                        : slot.id === 'midday'
-                          ? 'Mi-journée'
-                          : slot.id === 'afternoon'
-                            ? 'Après-midi'
-                            : slot.id === 'evening'
-                              ? 'Soir'
-                              : 'Nuit';
-
+                  {slotStats.map(({ slot, slotAvg, slotLabel }) => {
                     const barWidth = Math.min(100, Math.round((slotAvg / 180) * 100));
-
                     return (
                       <div key={slot.id} className="flex items-center gap-2 text-xs">
                         <span className="w-16 sm:w-20 text-gray-500 text-right shrink-0">{slotLabel}</span>
                         <div className="flex-1 bg-gray-100 rounded-full h-2">
                           <div
                             className="h-2 rounded-full"
-                            style={{
-                              width: `${barWidth}%`,
-                              backgroundColor: color,
-                            }}
+                            style={{ width: `${barWidth}%`, backgroundColor: color }}
                           />
                         </div>
                         <span className="w-12 text-gray-500 shrink-0">{slotAvg}ml</span>

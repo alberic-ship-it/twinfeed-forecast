@@ -45,7 +45,10 @@ export function DashboardScreen() {
   }, [feeds, sleeps]);
 
   // Recommendations
-  const recommendations = generateRecommendations(feeds, patterns, predictions);
+  const recommendations = useMemo(
+    () => generateRecommendations(feeds, patterns, predictions),
+    [feeds, patterns, predictions],
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">

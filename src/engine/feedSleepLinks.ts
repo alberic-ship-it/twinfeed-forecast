@@ -634,11 +634,22 @@ function computeWakeWindowNapQuality(
   const shortWakeNaps: { duration: number; time: Date }[] = [];
   const longWakeNaps: { duration: number; time: Date }[] = [];
 
-  for (const nap of naps) {
-    // Find previous sleep end (nap or night)
-    const prevSleep = [...allSleeps]
-      .filter((s) => s.baby === baby && s.endTime && s.endTime < nap.startTime)
-      .sort((a, b) => b.endTime!.getTime() - a.endTime!.getTime())[0];
+  // Pré-tri unique des sleeps par endTime (évite O(n²) : tri dans la boucle)
+  const babySleepsWithEnd = allSleeps
+    .filter((s) => s.baby === baby && s.endTime)
+    .sort((a, b) => a.endTime!.getTime() - b.endTime!.getTime());
+
+  // Deux pointeurs : naps triés par startTime, sleeps triés par endTime
+  const sortedNaps = [...naps].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+  let j = 0;
+
+  for (const nap of sortedNaps) {
+    // Avance j tant que le sleep suivant se termine avant le début de la sieste
+    while (j < babySleepsWithEnd.length && babySleepsWithEnd[j].endTime! < nap.startTime) {
+      j++;
+    }
+    // Le sleep précédent est à j-1
+    const prevSleep = j > 0 ? babySleepsWithEnd[j - 1] : undefined;
     if (!prevSleep?.endTime) continue;
 
     const wakeMin = differenceInMinutes(nap.startTime, prevSleep.endTime);
