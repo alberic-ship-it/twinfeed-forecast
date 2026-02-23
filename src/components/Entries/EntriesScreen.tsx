@@ -143,9 +143,13 @@ export function EntriesScreen() {
     );
   }
 
-  // Night data: active sessions + recaps from the last 24h
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const recentRecaps = nightRecaps.filter((r) => r.session.startTime >= yesterday);
+  // Night data: active sessions + recaps depuis minuit de la veille
+  // (fenêtre glissante 24h → remplacée par ancrage calendaire pour éviter
+  //  la disparition avant minuit des nuits démarrées tôt la veille)
+  const yesterdayMidnight = new Date();
+  yesterdayMidnight.setDate(yesterdayMidnight.getDate() - 1);
+  yesterdayMidnight.setHours(0, 0, 0, 0);
+  const recentRecaps = nightRecaps.filter((r) => r.session.startTime >= yesterdayMidnight);
 
   function renderNightBabySection(baby: BabyName) {
     const activeSession = nightSessions[baby];
