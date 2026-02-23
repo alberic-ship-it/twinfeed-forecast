@@ -120,6 +120,91 @@ function loadNightSessions(): Record<BabyName, NightSession | null> {
   } catch { return { colette: null, isaure: null }; }
 }
 
+// ── Entries cache — localStorage fallback pour les push serveur échoués ──
+const ENTRIES_CACHE_KEY = 'twinfeed-entries-cache';
+
+function saveEntriesCache(feeds: FeedRecord[], sleeps: SleepRecord[]) {
+  try {
+    const nonSeedFeeds = feeds.filter((f) => !f.id.startsWith('f|'));
+    const nonSeedSleeps = sleeps.filter((s) => !s.id.startsWith('s|'));
+    localStorage.setItem(ENTRIES_CACHE_KEY, JSON.stringify({
+      feeds: nonSeedFeeds.map((f) => ({ ...f, timestamp: f.timestamp.toISOString() })),
+      sleeps: nonSeedSleeps.map((s) => ({
+        ...s,
+        startTime: s.startTime.toISOString(),
+        endTime: s.endTime?.toISOString(),
+      })),
+    }));
+  } catch { /* localStorage indisponible */ }
+}
+
+function loadEntriesCache(): { feeds: FeedRecord[]; sleeps: SleepRecord[] } {
+  try {
+    const raw = localStorage.getItem(ENTRIES_CACHE_KEY);
+    if (!raw) return { feeds: [], sleeps: [] };
+    const data = JSON.parse(raw) as { feeds: Record<string, unknown>[]; sleeps: Record<string, unknown>[] };
+    return {
+      feeds: (data.feeds ?? []).map((f) => ({
+        ...f,
+        timestamp: new Date(f.timestamp as string),
+      })) as FeedRecord[],
+      sleeps: (data.sleeps ?? []).map((s) => ({
+        ...s,
+        startTime: new Date(s.startTime as string),
+        endTime: s.endTime ? new Date(s.endTime as string) : undefined,
+      })) as SleepRecord[],
+    };
+  } catch { return { feeds: [], sleeps: [] }; }
+}
+
+// ── Night recaps persistence — les bilans de nuit survivent au rechargement ──
+const NIGHT_RECAPS_KEY = 'twinfeed-night-recaps';
+const NIGHT_RECAPS_TTL_MS = 48 * 60 * 60 * 1000; // 48h
+
+function saveNightRecapsToStorage(recaps: NightRecap[]) {
+  try {
+    const cutoff = Date.now() - NIGHT_RECAPS_TTL_MS;
+    const recent = recaps.filter((r) => r.session.startTime.getTime() > cutoff);
+    localStorage.setItem(NIGHT_RECAPS_KEY, JSON.stringify(
+      recent.map((r) => ({
+        ...r,
+        session: {
+          ...r.session,
+          startTime: r.session.startTime.toISOString(),
+          endTime: r.session.endTime?.toISOString(),
+          feeds: r.session.feeds.map((f) => ({ ...f, timestamp: f.timestamp.toISOString() })),
+        },
+      }))
+    ));
+  } catch { /* localStorage indisponible */ }
+}
+
+function loadNightRecapsFromStorage(): NightRecap[] {
+  try {
+    const raw = localStorage.getItem(NIGHT_RECAPS_KEY);
+    if (!raw) return [];
+    const cutoff = Date.now() - NIGHT_RECAPS_TTL_MS;
+    const data = JSON.parse(raw) as Record<string, unknown>[];
+    return data
+      .map((r) => {
+        const s = r.session as Record<string, unknown>;
+        return {
+          ...r,
+          session: {
+            ...s,
+            startTime: new Date(s.startTime as string),
+            endTime: s.endTime ? new Date(s.endTime as string) : undefined,
+            feeds: ((s.feeds as Record<string, unknown>[]) ?? []).map((f) => ({
+              ...f,
+              timestamp: new Date(f.timestamp as string),
+            })),
+          },
+        } as NightRecap;
+      })
+      .filter((r) => r.session.startTime.getTime() > cutoff);
+  } catch { return []; }
+}
+
 /** Internal: refresh feed-sleep insights. Not exposed on the public Store interface. */
 function _refreshInsights(get: () => Store, set: (partial: Partial<Store>) => void) {
   const { feeds, sleeps } = get();
@@ -146,7 +231,7 @@ export const useStore = create<Store>((set, get) => ({
     isaure: analyzeSleep('isaure', [], [], new Date()),
   },
   nightSessions: loadNightSessions(),
-  nightRecaps: [],
+  nightRecaps: loadNightRecapsFromStorage(),
   dataLoaded: false,
   lastUpdated: null,
 
@@ -154,6 +239,7 @@ export const useStore = create<Store>((set, get) => ({
 
   loadData: (feeds, sleeps) => {
     set({ feeds, sleeps, dataLoaded: true });
+    saveEntriesCache(feeds, sleeps);
     get().refreshPredictions();
     _refreshInsights(get, set);
     set({ screen: 'dashboard' });
@@ -220,6 +306,7 @@ export const useStore = create<Store>((set, get) => ({
       set({ feeds: allFeeds, dataLoaded: true });
     }
 
+    saveEntriesCache(allFeeds, get().sleeps);
     get().refreshPredictions(); // _refreshInsights est déjà appelé en interne
 
     // Push to server
@@ -240,6 +327,7 @@ export const useStore = create<Store>((set, get) => ({
       (a, b) => a.startTime.getTime() - b.startTime.getTime()
     );
     set({ sleeps: allSleeps, dataLoaded: true });
+    saveEntriesCache(get().feeds, allSleeps);
     get().refreshPredictions();
     _refreshInsights(get, set);
 
@@ -252,6 +340,7 @@ export const useStore = create<Store>((set, get) => ({
     const filtered = sleeps.filter((s) => s.id !== id);
     if (filtered.length === sleeps.length) return; // not found
     set({ sleeps: filtered });
+    saveEntriesCache(get().feeds, filtered);
     // Force refresh even if length changed
     _lastRefreshKey = '';
     get().refreshPredictions();
@@ -266,6 +355,7 @@ export const useStore = create<Store>((set, get) => ({
     const filtered = feeds.filter((f) => f.id !== id);
     if (filtered.length === feeds.length) return; // not found
     set({ feeds: filtered });
+    saveEntriesCache(filtered, get().sleeps);
     _lastRefreshKey = '';
     get().refreshPredictions();
     _refreshInsights(get, set);
@@ -337,13 +427,16 @@ export const useStore = create<Store>((set, get) => ({
     const allSleeps = [...sleeps, nightSleep].sort(
       (a, b) => a.startTime.getTime() - b.startTime.getTime()
     );
+    const newRecaps = [...nightRecaps.filter((r) => r.baby !== baby || r.dismissed), recap];
 
     set({
       nightSessions: updatedSessions,
-      nightRecaps: [...nightRecaps.filter((r) => r.baby !== baby || r.dismissed), recap],
+      nightRecaps: newRecaps,
       sleeps: allSleeps,
     });
     saveNightSessions(updatedSessions);
+    saveNightRecapsToStorage(newRecaps);
+    saveEntriesCache(get().feeds, allSleeps);
     pushNightSessions(updatedSessions).catch(() => {});
     pushEntries([], [nightSleep]).catch(() => {});
 
@@ -354,11 +447,11 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   dismissNightRecap: (baby) => {
-    set((state) => ({
-      nightRecaps: state.nightRecaps.map((r) =>
-        r.baby === baby ? { ...r, dismissed: true } : r
-      ),
-    }));
+    const newRecaps = get().nightRecaps.map((r) =>
+      r.baby === baby ? { ...r, dismissed: true } : r
+    );
+    set({ nightRecaps: newRecaps });
+    saveNightRecapsToStorage(newRecaps);
   },
 
   refreshPredictions: () => {
@@ -430,6 +523,8 @@ export const useStore = create<Store>((set, get) => ({
       lastUpdated: null,
     });
     saveNightSessions(emptyNights);
+    localStorage.removeItem(ENTRIES_CACHE_KEY);
+    localStorage.removeItem(NIGHT_RECAPS_KEY);
     clearSharedEntries().catch(() => {});
     loadSeedData();
   },
@@ -595,8 +690,10 @@ export async function initData() {
   saveNightSessions(mergedNights);
   useStore.setState({ nightSessions: mergedNights });
 
-  const allFeeds = mergeFeeds(mergeFeeds(seeds.feeds, shared.feeds), migrated.feeds);
-  const allSleeps = mergeSleeps(mergeSleeps(seeds.sleeps, shared.sleeps), migrated.sleeps);
+  // Include localStorage cache as fallback pour les entrées dont le push serveur a échoué
+  const cached = loadEntriesCache();
+  const allFeeds = mergeFeeds(mergeFeeds(mergeFeeds(seeds.feeds, shared.feeds), migrated.feeds), cached.feeds);
+  const allSleeps = mergeSleeps(mergeSleeps(mergeSleeps(seeds.sleeps, shared.sleeps), migrated.sleeps), cached.sleeps);
 
   useStore.getState().loadData(allFeeds, allSleeps);
 }
