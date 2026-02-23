@@ -219,33 +219,40 @@ export function analyzeSleep(
       s.durationMin < NIGHT_SLEEP.minDurationMin,
   );
 
+  // ── Passe unique sur allNaps : latences, intervalles, durées ──
   const latencies: number[] = [];
   const latencyWeights: number[] = [];
-  for (const nap of allNaps) {
-    const lastFeed = findLastFeedBefore(babyFeeds, nap.startTime, 180);
-    if (!lastFeed) continue;
-    const latency = differenceInMinutes(nap.startTime, lastFeed.timestamp);
-    if (latency > 0) {
-      latencies.push(latency);
-      latencyWeights.push(recencyWeight(nap.startTime, now));
-    }
-  }
-  const medianLatency = latencies.length >= 3 ? weightedMedian(latencies, latencyWeights) : null;
-
-  // ── Compute median inter-nap interval from history (weighted by recency) ──
   const interNapIntervals: number[] = [];
   const interNapWeights: number[] = [];
-  for (let i = 1; i < allNaps.length; i++) {
-    const prev = allNaps[i - 1];
-    const curr = allNaps[i];
-    if (prev.endTime) {
-      const gap = differenceInMinutes(curr.startTime, prev.endTime);
-      if (gap > 0 && gap < 360) {
-        interNapIntervals.push(gap);
-        interNapWeights.push(recencyWeight(curr.startTime, now));
+  const napDurations: number[] = [];
+  const napDurWeights: number[] = [];
+
+  for (let i = 0; i < allNaps.length; i++) {
+    const nap = allNaps[i];
+    const w = recencyWeight(nap.startTime, now);
+
+    // Latence dernier repas → sieste
+    const lastFeed = findLastFeedBefore(babyFeeds, nap.startTime, 180);
+    if (lastFeed) {
+      const latency = differenceInMinutes(nap.startTime, lastFeed.timestamp);
+      if (latency > 0) { latencies.push(latency); latencyWeights.push(w); }
+    }
+
+    // Intervalle inter-siestes
+    if (i > 0) {
+      const prev = allNaps[i - 1];
+      if (prev.endTime) {
+        const gap = differenceInMinutes(nap.startTime, prev.endTime);
+        if (gap > 0 && gap < 360) { interNapIntervals.push(gap); interNapWeights.push(w); }
       }
     }
+
+    // Durée de sieste
+    napDurations.push(nap.durationMin);
+    napDurWeights.push(w);
   }
+
+  const medianLatency = latencies.length >= 3 ? weightedMedian(latencies, latencyWeights) : null;
   const medianInterNap =
     interNapIntervals.length >= 3 ? weightedMedian(interNapIntervals, interNapWeights) : null;
 
@@ -253,8 +260,6 @@ export function analyzeSleep(
   const positionalInterNap = computePositionalInterNap(allNaps, now);
 
   // ── Compute average nap duration from history (weighted by recency) ──
-  const napDurations = allNaps.map((n) => n.durationMin);
-  const napDurWeights = allNaps.map((n) => recencyWeight(n.startTime, now));
   const avgNapDuration =
     napDurations.length >= 3
       ? Math.round(weightedAvg(napDurations, napDurWeights))

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { PROFILES, BABY_COLORS } from '../../data/knowledge';
 import type { BabyName } from '../../types';
@@ -29,6 +29,11 @@ export function QuickLog() {
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   // Ref-based guard: prevents double-submission from rapid taps
   const submittingRef = useRef(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (savedTimerRef.current) clearTimeout(savedTimerRef.current); };
+  }, []);
 
   const handleBabyTap = (baby: BabyName) => {
     if (selectedBaby === baby) {
@@ -53,8 +58,9 @@ export function QuickLog() {
   };
 
   const showSaved = (msg: string) => {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
     setSavedMsg(msg);
-    setTimeout(() => setSavedMsg(null), 3000);
+    savedTimerRef.current = setTimeout(() => setSavedMsg(null), 3000);
   };
 
   const handleSubmitBottle = () => {

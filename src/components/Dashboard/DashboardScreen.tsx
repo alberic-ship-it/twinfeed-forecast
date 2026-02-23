@@ -23,6 +23,7 @@ export function DashboardScreen() {
     alerts,
     patterns,
     sleepAnalyses,
+    feedSleepInsights,
     feeds,
     sleeps,
     lastUpdated,
@@ -31,7 +32,6 @@ export function DashboardScreen() {
 
   const setScreen = useStore((s) => s.setScreen);
   const dismissAlert = useStore((s) => s.dismissAlert);
-  const feedSleepInsights = useStore((s) => s.feedSleepInsights);
 
   const now = new Date();
 
