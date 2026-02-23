@@ -7,6 +7,7 @@ import type {
   TimingPrediction,
   VolumePrediction,
   Explanation,
+  DetectedPattern,
 } from '../types';
 import { PROFILES, INTERVAL_FILTER, getSlotId } from '../data/knowledge';
 import { detectPatterns } from './patterns';
@@ -107,6 +108,7 @@ export function predictNextFeed(
   rawFeeds: FeedRecord[],
   rawSleeps: SleepRecord[],
   now: Date,
+  precomputedPatterns?: DetectedPattern[],
 ): Prediction | null {
   const allFeeds = filterRecentFeeds(rawFeeds, now);
   const allSleeps = filterRecentSleeps(rawSleeps, now);
@@ -148,7 +150,7 @@ export function predictNextFeed(
     return predictFromProfile(baby, allFeeds, now, cachedInterval, cachedVolume);
   }
 
-  const patterns = detectPatterns(baby, allFeeds, allSleeps, now);
+  const patterns = precomputedPatterns ?? detectPatterns(baby, allFeeds, allSleeps, now);
   const explanations: Explanation[] = [];
 
   // --- TIMING PREDICTION ---

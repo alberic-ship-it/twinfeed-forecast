@@ -241,7 +241,6 @@ export const useStore = create<Store>((set, get) => ({
     set({ feeds, sleeps, dataLoaded: true });
     saveEntriesCache(feeds, sleeps);
     get().refreshPredictions();
-    _refreshInsights(get, set);
     set({ screen: 'dashboard' });
   },
 
@@ -251,7 +250,6 @@ export const useStore = create<Store>((set, get) => ({
     const allSleeps = mergeSleeps(sleeps, newSleeps);
     set({ feeds: allFeeds, sleeps: allSleeps, dataLoaded: true });
     get().refreshPredictions();
-    _refreshInsights(get, set);
 
     // Push only non-seed entries to server
     const nonSeedFeeds = allFeeds.filter((f) => !seedFeedIds.has(f.id));
@@ -329,7 +327,6 @@ export const useStore = create<Store>((set, get) => ({
     set({ sleeps: allSleeps, dataLoaded: true });
     saveEntriesCache(get().feeds, allSleeps);
     get().refreshPredictions();
-    _refreshInsights(get, set);
 
     // Push to server
     pushEntries([], [sleep]).catch(() => {});
@@ -344,7 +341,6 @@ export const useStore = create<Store>((set, get) => ({
     // Force refresh even if length changed
     _lastRefreshKey = '';
     get().refreshPredictions();
-    _refreshInsights(get, set);
 
     // Delete from server too
     deleteServerEntries({ deleteSleepIds: [id] }).catch(() => {});
@@ -358,7 +354,6 @@ export const useStore = create<Store>((set, get) => ({
     saveEntriesCache(filtered, get().sleeps);
     _lastRefreshKey = '';
     get().refreshPredictions();
-    _refreshInsights(get, set);
 
     deleteServerEntries({ deleteFeedIds: [id] }).catch(() => {});
   },
@@ -443,7 +438,6 @@ export const useStore = create<Store>((set, get) => ({
     // Force refresh predictions with new sleep data
     _lastRefreshKey = '';
     get().refreshPredictions();
-    _refreshInsights(get, set);
   },
 
   dismissNightRecap: (baby) => {
@@ -471,13 +465,14 @@ export const useStore = create<Store>((set, get) => ({
     _lastRefreshKey = refreshKey;
     _lastRefreshTime = now.getTime();
 
-    const colettePred = predictNextFeed('colette', feeds, sleeps, now);
-    const isaurePred = predictNextFeed('isaure', feeds, sleeps, now);
+    // Patterns calculés en premier pour éviter un double appel dans predictNextFeed
+    const colettePatterns = detectPatterns('colette', feeds, sleeps, now);
+    const isaurePatterns = detectPatterns('isaure', feeds, sleeps, now);
+    const colettePred = predictNextFeed('colette', feeds, sleeps, now, colettePatterns);
+    const isaurePred = predictNextFeed('isaure', feeds, sleeps, now, isaurePatterns);
     const freshAlerts = generateAlerts(feeds).map((a) =>
       dismissedAlertIds.has(a.id) ? { ...a, dismissed: true } : a
     );
-    const colettePatterns = detectPatterns('colette', feeds, sleeps, now);
-    const isaurePatterns = detectPatterns('isaure', feeds, sleeps, now);
     const coletteNight = nightSessions.colette && !nightSessions.colette.endTime ? nightSessions.colette : undefined;
     const isaureNight = nightSessions.isaure && !nightSessions.isaure.endTime ? nightSessions.isaure : undefined;
     const coletteSleep = analyzeSleep('colette', sleeps, feeds, now, coletteNight);

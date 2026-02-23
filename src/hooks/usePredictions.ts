@@ -1,15 +1,33 @@
 import { useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore, initData, syncFromServer } from '../store';
 
 export function usePredictions() {
-  const predictions = useStore((s) => s.predictions);
-  const alerts = useStore((s) => s.alerts);
-  const patterns = useStore((s) => s.patterns);
-  const sleepAnalyses = useStore((s) => s.sleepAnalyses);
-  const feeds = useStore((s) => s.feeds);
-  const sleeps = useStore((s) => s.sleeps);
-  const dataLoaded = useStore((s) => s.dataLoaded);
-  const lastUpdated = useStore((s) => s.lastUpdated);
+  // Un seul sélecteur shallow : Zustand ne déclenche qu'un seul re-render
+  // même quand refreshPredictions met à jour plusieurs champs en un set().
+  const {
+    predictions,
+    alerts,
+    patterns,
+    sleepAnalyses,
+    feeds,
+    sleeps,
+    dataLoaded,
+    lastUpdated,
+  } = useStore(
+    useShallow((s) => ({
+      predictions: s.predictions,
+      alerts: s.alerts,
+      patterns: s.patterns,
+      sleepAnalyses: s.sleepAnalyses,
+      feeds: s.feeds,
+      sleeps: s.sleeps,
+      dataLoaded: s.dataLoaded,
+      lastUpdated: s.lastUpdated,
+    }))
+  );
+
+  // refreshPredictions est une fonction stable (référence constante dans Zustand)
   const refreshPredictions = useStore((s) => s.refreshPredictions);
 
   // Auto-refresh predictions every 5 minutes
