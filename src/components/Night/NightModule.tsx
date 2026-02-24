@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Moon, Square } from 'lucide-react';
+import { Moon, Square, Pencil, Plus, X, Check } from 'lucide-react';
 import type { BabyName } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
 import { useStore } from '../../store';
@@ -22,10 +22,34 @@ function formatDurationHM(min: number): string {
   return m > 0 ? `${h}h${m.toString().padStart(2, '0')}` : `${h}h`;
 }
 
+function getCurrentTimeStr(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+function buildTimestamp(timeStr: string): Date {
+  const [h, m] = timeStr.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  // If more than 1 min in the future, assume it refers to yesterday
+  if (d.getTime() > Date.now() + 60_000) {
+    d.setDate(d.getDate() - 1);
+  }
+  return d;
+}
+
 export function NightModule({ analyses }: NightModuleProps) {
   const nightSessions = useStore((s) => s.nightSessions);
   const endNight = useStore((s) => s.endNight);
+  const logFeed = useStore((s) => s.logFeed);
+  const updateNightStartTime = useStore((s) => s.updateNightStartTime);
   const [, setTick] = useState(0);
+
+  // Form state — one active form at a time
+  const [activeForm, setActiveForm] = useState<{ baby: BabyName; kind: 'feed' | 'editStart' } | null>(null);
+  const [feedType, setFeedType] = useState<'bottle' | 'breast'>('bottle');
+  const [mlValue, setMlValue] = useState(130);
+  const [customTimeStr, setCustomTimeStr] = useState('');
 
   // Refresh every 60s for live timer
   useEffect(() => {
@@ -38,6 +62,34 @@ export function NightModule({ analyses }: NightModuleProps) {
   );
 
   if (activeBabies.length === 0) return null;
+
+  const openFeedForm = (baby: BabyName) => {
+    setActiveForm({ baby, kind: 'feed' });
+    setFeedType('bottle');
+    setMlValue(130);
+    setCustomTimeStr(getCurrentTimeStr());
+  };
+
+  const openEditStart = (baby: BabyName) => {
+    const session = nightSessions[baby];
+    if (!session) return;
+    setActiveForm({ baby, kind: 'editStart' });
+    setCustomTimeStr(formatTime(session.startTime));
+  };
+
+  const closeForm = () => setActiveForm(null);
+
+  const handleSubmitFeed = (baby: BabyName) => {
+    if (!customTimeStr) return;
+    logFeed(baby, feedType, feedType === 'bottle' ? mlValue : undefined, buildTimestamp(customTimeStr));
+    closeForm();
+  };
+
+  const handleSubmitEditStart = (baby: BabyName) => {
+    if (!customTimeStr) return;
+    updateNightStartTime(baby, buildTimestamp(customTimeStr));
+    closeForm();
+  };
 
   return (
     <div className="bg-slate-800 rounded-xl border border-slate-700 p-3 sm:p-4 space-y-3">
@@ -65,6 +117,10 @@ export function NightModule({ analyses }: NightModuleProps) {
             ? Math.round((now.getTime() - lastFeed.timestamp.getTime()) / 60_000)
             : null;
 
+          const isFormActive = activeForm?.baby === baby;
+          const showFeedForm = isFormActive && activeForm?.kind === 'feed';
+          const showEditStart = isFormActive && activeForm?.kind === 'editStart';
+
           return (
             <div key={baby} className="space-y-2.5">
               <span className="text-sm font-medium text-slate-200">
@@ -76,9 +132,38 @@ export function NightModule({ analyses }: NightModuleProps) {
                 <p className="text-2xl sm:text-3xl font-bold text-indigo-300 leading-tight">
                   {formatDurationHM(durationMin)}
                 </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  depuis {formatTime(session.startTime)}
-                </p>
+
+                {/* Start time — editable */}
+                {showEditStart ? (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <input
+                      type="time"
+                      value={customTimeStr}
+                      onChange={(e) => setCustomTimeStr(e.target.value)}
+                      className="text-xs bg-slate-700 text-slate-200 rounded px-1.5 py-0.5 border border-slate-600 outline-none"
+                    />
+                    <button
+                      onClick={() => handleSubmitEditStart(baby)}
+                      className="p-1 text-indigo-300 hover:text-indigo-200 transition-colors"
+                    >
+                      <Check size={13} />
+                    </button>
+                    <button
+                      onClick={closeForm}
+                      className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => openEditStart(baby)}
+                    className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5 hover:text-slate-300 transition-colors group"
+                  >
+                    <span>depuis {formatTime(session.startTime)}</span>
+                    <Pencil size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                )}
               </div>
 
               {/* Progress bar */}
@@ -94,11 +179,11 @@ export function NightModule({ analyses }: NightModuleProps) {
                 </p>
               </div>
 
-              {/* Night feeds list */}
+              {/* Night wake-ups list */}
               {session.feeds.length > 0 && (
                 <div className="space-y-0.5">
                   <p className="text-[11px] text-slate-400 font-medium">
-                    {session.feeds.length} repas cette nuit
+                    {session.feeds.length} réveil{session.feeds.length > 1 ? 's' : ''} cette nuit
                   </p>
                   {session.feeds.map((f) => (
                     <p key={f.id} className="text-[11px] text-slate-500">
@@ -122,14 +207,102 @@ export function NightModule({ analyses }: NightModuleProps) {
                 </p>
               )}
 
-              {/* End night button */}
-              <button
-                onClick={() => endNight(baby)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-200 text-xs font-medium rounded-lg transition-colors w-full justify-center"
-              >
-                <Square size={12} />
-                Terminer la nuit
-              </button>
+              {/* Inline réveil form */}
+              {showFeedForm && (
+                <div className="bg-slate-700 rounded-lg p-2.5 space-y-2">
+                  {/* Biberon / Tétée toggle */}
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setFeedType('bottle')}
+                      className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${
+                        feedType === 'bottle'
+                          ? 'bg-indigo-500 text-white'
+                          : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
+                      }`}
+                    >
+                      Biberon
+                    </button>
+                    <button
+                      onClick={() => setFeedType('breast')}
+                      className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${
+                        feedType === 'breast'
+                          ? 'bg-indigo-500 text-white'
+                          : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
+                      }`}
+                    >
+                      Tétée
+                    </button>
+                  </div>
+
+                  {/* ml selector */}
+                  {feedType === 'bottle' && (
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => setMlValue(Math.max(30, mlValue - 10))}
+                        className="w-7 h-7 rounded-full bg-slate-600 text-slate-200 text-sm font-bold hover:bg-slate-500 transition-colors"
+                      >
+                        -
+                      </button>
+                      <span className="text-base font-bold text-slate-200 w-16 text-center tabular-nums">
+                        {mlValue} ml
+                      </span>
+                      <button
+                        onClick={() => setMlValue(Math.min(300, mlValue + 10))}
+                        className="w-7 h-7 rounded-full bg-slate-600 text-slate-200 text-sm font-bold hover:bg-slate-500 transition-colors"
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Time */}
+                  <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[11px] text-slate-400">Heure</span>
+                    <input
+                      type="time"
+                      value={customTimeStr}
+                      onChange={(e) => setCustomTimeStr(e.target.value)}
+                      className="text-xs bg-slate-600 text-slate-200 rounded px-1.5 py-0.5 border border-slate-500 outline-none"
+                    />
+                  </div>
+
+                  {/* Validate / Cancel */}
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={closeForm}
+                      className="flex-1 py-1.5 rounded text-xs text-slate-400 bg-slate-600 hover:bg-slate-500 transition-colors"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={() => handleSubmitFeed(baby)}
+                      className="flex-1 py-1.5 rounded text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-400 transition-colors"
+                    >
+                      Valider
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              {!showFeedForm && (
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => openFeedForm(baby)}
+                    className="flex items-center gap-1 px-2.5 py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-300 text-xs font-medium rounded-lg transition-colors flex-1 justify-center"
+                  >
+                    <Plus size={12} />
+                    Réveil
+                  </button>
+                  <button
+                    onClick={() => endNight(baby)}
+                    className="flex items-center gap-1.5 px-2.5 py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-200 text-xs font-medium rounded-lg transition-colors flex-1 justify-center"
+                  >
+                    <Square size={12} />
+                    Terminer
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

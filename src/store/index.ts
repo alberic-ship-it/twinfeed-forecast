@@ -47,6 +47,7 @@ interface Store {
   deleteFeed: (id: string) => void;
   startNight: (baby: BabyName) => void;
   endNight: (baby: BabyName) => void;
+  updateNightStartTime: (baby: BabyName, newStartTime: Date) => void;
   dismissNightRecap: (baby: BabyName) => void;
   refreshPredictions: () => void;
   dismissAlert: (id: string) => void;
@@ -428,6 +429,19 @@ export const useStore = create<Store>((set, get) => ({
     pushEntries([], [nightSleep]).catch(() => {});
 
     // Force refresh predictions with new sleep data
+    _lastRefreshKey = '';
+    get().refreshPredictions();
+  },
+
+  updateNightStartTime: (baby, newStartTime) => {
+    const { nightSessions } = get();
+    const session = nightSessions[baby];
+    if (!session || session.endTime) return;
+    const updatedSession = { ...session, startTime: newStartTime };
+    const updatedSessions = { ...nightSessions, [baby]: updatedSession };
+    set({ nightSessions: updatedSessions });
+    saveNightSessions(updatedSessions);
+    pushNightSessions(updatedSessions).catch(() => {});
     _lastRefreshKey = '';
     get().refreshPredictions();
   },

@@ -38,9 +38,24 @@ export function EntriesScreen() {
   const deleteSleep = useStore((s) => s.deleteSleep);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+  // Build a set of feed IDs that belong to a night session (active or recent recap)
+  // These are already shown in the "Nuits" section, so we exclude them from "Repas"
+  // to avoid them disappearing from the Repas section when midnight passes.
+  const nightFeedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const baby of ['colette', 'isaure'] as BabyName[]) {
+      const session = nightSessions[baby];
+      if (session) session.feeds.forEach((f) => ids.add(f.id));
+    }
+    nightRecaps.forEach((r) => r.session.feeds.forEach((f) => ids.add(f.id)));
+    return ids;
+  }, [nightSessions, nightRecaps]);
+
   const todayFeeds = useMemo(
-    () => feeds.filter((f) => isToday(f.timestamp)).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()),
-    [feeds],
+    () => feeds
+      .filter((f) => isToday(f.timestamp) && !nightFeedIds.has(f.id))
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()),
+    [feeds, nightFeedIds],
   );
 
   const todaySleeps = useMemo(
