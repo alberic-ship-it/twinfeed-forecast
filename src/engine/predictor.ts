@@ -158,7 +158,7 @@ export function predictNextFeed(
   // Use type-aware interval: post-breast intervals are typically shorter.
   const roughHour = (lastFeed.timestamp.getHours() + Math.round(profile.stats.medianIntervalH)) % 24;
   const targetSlot = getSlotForHour(roughHour, baby);
-  let intervalH = cachedInterval(targetSlot.id, lastFeed.type);
+  let intervalH = cachedInterval(targetSlot.id, lastFeed.type === 'solid' ? undefined : lastFeed.type);
 
   // Apply pattern modifiers (COMPENSATION -25%, CLUSTER +30%, etc.)
   for (const pattern of patterns) {
