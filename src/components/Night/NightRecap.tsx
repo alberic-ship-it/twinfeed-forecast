@@ -72,7 +72,7 @@ function RecapCard({ recap, onDismiss }: { recap: NightRecapType; onDismiss: () 
         <div className="flex justify-between text-[11px]">
           <span className="text-indigo-400">Repas</span>
           <span className="text-indigo-700 font-medium">
-            {recap.feedCount} ({recap.totalVolumeMl} ml)
+            {recap.feedCount}{recap.totalVolumeMl > 0 ? ` (${recap.totalVolumeMl} ml)` : ''}
           </span>
         </div>
         <div className="flex justify-between text-[11px]">
