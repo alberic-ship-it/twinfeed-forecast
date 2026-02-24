@@ -197,7 +197,7 @@ export function analyzeSleep(
 
   // Today's naps (depuis 6h, excluant les vrais sommeils de nuit)
   // Les siestes tardives (21h-23h59) sont incluses tant que leur durée
-  // est inférieure à NIGHT_SLEEP.minDurationMin (5h) — elles impactent
+  // est inférieure à NIGHT_SLEEP.minDurationMin (6h) — elles impactent
   // le calcul du coucher via lastNapForBedtime.
   const todayStart = new Date(now);
   todayStart.setHours(6, 0, 0, 0);

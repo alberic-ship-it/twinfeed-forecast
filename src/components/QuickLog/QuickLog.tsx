@@ -87,7 +87,7 @@ export function QuickLog() {
   };
 
   const handleSubmitBottle = () => {
-    if (!selectedBaby || submittingRef.current) return;
+    if (!selectedBaby || submittingRef.current || isFutureTime(customTimeStr)) return;
     submittingRef.current = true;
     const saved = logFeed(selectedBaby, 'bottle', mlValue, buildTimestamp(customTimeStr));
     const msg = saved
@@ -102,7 +102,7 @@ export function QuickLog() {
   };
 
   const handleSubmitBreast = () => {
-    if (!selectedBaby || submittingRef.current) return;
+    if (!selectedBaby || submittingRef.current || isFutureTime(customTimeStr)) return;
     submittingRef.current = true;
     const saved = logFeed(selectedBaby, 'breast', undefined, buildTimestamp(customTimeStr));
     const msg = saved
