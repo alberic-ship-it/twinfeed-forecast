@@ -720,8 +720,12 @@ export async function syncFromServer() {
     ]);
 
     const { feeds, sleeps, nightSessions } = useStore.getState();
-    const newFeeds = mergeFeeds(feeds, shared.feeds);
-    const newSleeps = mergeSleeps(sleeps, shared.sleeps);
+
+    // Serveur fait autorité pour les données utilisateur — préserver uniquement les seeds locaux.
+    // Cela garantit que les suppressions faites sur un appareil se propagent à l'autre.
+    // (Avant : mergeFeeds(feeds, shared) → additif uniquement, jamais de suppression)
+    const newFeeds = mergeFeeds(feeds.filter(f => seedFeedIds.has(f.id)), shared.feeds);
+    const newSleeps = mergeSleeps(sleeps.filter(s => seedSleepIds.has(s.id)), shared.sleeps);
 
     // Merge night sessions: local prend la priorité sur serveur
     const mergedNights: Record<BabyName, NightSession | null> = { colette: null, isaure: null };
@@ -731,11 +735,20 @@ export async function syncFromServer() {
     const nightsChanged = (['colette', 'isaure'] as BabyName[]).some(
       (b) => JSON.stringify(mergedNights[b]) !== JSON.stringify(nightSessions[b])
     );
-    const feedsChanged = newFeeds.length !== feeds.length || newSleeps.length !== sleeps.length;
+    // Détecter les suppressions (pas seulement les ajouts) en comparant aussi les IDs
+    const localFeedIds = new Set(feeds.map(f => f.id));
+    const localSleepIds = new Set(sleeps.map(s => s.id));
+    const feedsChanged = newFeeds.length !== feeds.length || newFeeds.some(f => !localFeedIds.has(f.id));
+    const sleepsChanged = newSleeps.length !== sleeps.length || newSleeps.some(s => !localSleepIds.has(s.id));
+    const dataChanged = feedsChanged || sleepsChanged;
 
-    if (feedsChanged) useStore.setState({ feeds: newFeeds, sleeps: newSleeps });
+    if (dataChanged) {
+      useStore.setState({ feeds: newFeeds, sleeps: newSleeps });
+      // Mettre à jour le cache pour éviter que les entrées supprimées réapparaissent au rechargement
+      saveEntriesCache(newFeeds, newSleeps);
+    }
     if (nightsChanged) { useStore.setState({ nightSessions: mergedNights }); saveNightSessions(mergedNights); }
-    if (feedsChanged || nightsChanged) useStore.getState().refreshPredictions();
+    if (dataChanged || nightsChanged) useStore.getState().refreshPredictions();
   } catch {
     // Server unreachable — ignore
   }
