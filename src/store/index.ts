@@ -754,6 +754,13 @@ export async function initData() {
   const mergedRecaps = mergeNightRecaps(nightResult.recaps, localRecaps);
   saveNightRecapsToStorage(mergedRecaps);
 
+  // Push local recaps absents du serveur (rattrapage pour les nuits pré-fix)
+  const serverRecapIds = new Set(nightResult.recaps.map((r) => r.session.id));
+  const hasUnpushedRecaps = localRecaps.some((r) => !serverRecapIds.has(r.session.id));
+  if (hasUnpushedRecaps) {
+    pushNightSessions(mergedNights, mergedRecaps).catch(() => {});
+  }
+
   useStore.setState({ nightSessions: mergedNights, nightRecaps: mergedRecaps });
 
   // Include localStorage cache as fallback pour les entrées dont le push serveur a échoué
