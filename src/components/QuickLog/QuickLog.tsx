@@ -19,6 +19,15 @@ function buildTimestamp(timeStr: string): Date {
   return d;
 }
 
+/** Returns true if the entered time would be silently moved to yesterday. */
+function isBackdatedToYesterday(timeStr: string): boolean {
+  if (!timeStr) return false;
+  const [h, m] = timeStr.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.getTime() > Date.now() + 60_000;
+}
+
 export function QuickLog() {
   const logFeed = useStore((s) => s.logFeed);
   const [selectedBaby, setSelectedBaby] = useState<BabyName | null>(null);
@@ -184,14 +193,21 @@ export function QuickLog() {
           <p className="text-xs text-gray-400 text-center">ml</p>
 
           {/* Time row */}
-          <div className="flex items-center justify-between px-1 py-1 border-t border-gray-100">
-            <span className="text-xs text-gray-400">Heure</span>
-            <input
-              type="time"
-              value={customTimeStr}
-              onChange={(e) => setCustomTimeStr(e.target.value)}
-              className="text-sm text-gray-600 bg-transparent border-0 outline-none tabular-nums"
-            />
+          <div className="border-t border-gray-100">
+            <div className="flex items-center justify-between px-1 py-1">
+              <span className="text-xs text-gray-400">Heure</span>
+              <input
+                type="time"
+                value={customTimeStr}
+                onChange={(e) => setCustomTimeStr(e.target.value)}
+                className="text-sm text-gray-600 bg-transparent border-0 outline-none tabular-nums"
+              />
+            </div>
+            {isBackdatedToYesterday(customTimeStr) && (
+              <p className="text-[11px] text-amber-500 px-1 pb-1">
+                ⚠️ Heure dans le futur — sera enregistré hier à {customTimeStr}
+              </p>
+            )}
           </div>
 
           <div className="flex gap-2">
@@ -220,14 +236,21 @@ export function QuickLog() {
           </p>
 
           {/* Time row */}
-          <div className="flex items-center justify-between px-1 py-1 border-t border-b border-gray-100">
-            <span className="text-xs text-gray-400">Heure</span>
-            <input
-              type="time"
-              value={customTimeStr}
-              onChange={(e) => setCustomTimeStr(e.target.value)}
-              className="text-sm text-gray-600 bg-transparent border-0 outline-none tabular-nums"
-            />
+          <div className="border-t border-b border-gray-100">
+            <div className="flex items-center justify-between px-1 py-1">
+              <span className="text-xs text-gray-400">Heure</span>
+              <input
+                type="time"
+                value={customTimeStr}
+                onChange={(e) => setCustomTimeStr(e.target.value)}
+                className="text-sm text-gray-600 bg-transparent border-0 outline-none tabular-nums"
+              />
+            </div>
+            {isBackdatedToYesterday(customTimeStr) && (
+              <p className="text-[11px] text-amber-500 px-1 pb-1">
+                ⚠️ Heure dans le futur — sera enregistré hier à {customTimeStr}
+              </p>
+            )}
           </div>
 
           <div className="flex gap-2">
