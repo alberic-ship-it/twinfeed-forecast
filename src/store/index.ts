@@ -707,6 +707,16 @@ export async function initData() {
   const allFeeds = mergeFeeds(mergeFeeds(mergeFeeds(seeds.feeds, shared.feeds), migrated.feeds), cached.feeds);
   const allSleeps = mergeSleeps(mergeSleeps(mergeSleeps(seeds.sleeps, shared.sleeps), migrated.sleeps), cached.sleeps);
 
+  // Rattrapage : pousser vers le serveur les entrées locales absentes du serveur
+  // (push raté précédemment, ou cache local plus complet que le serveur)
+  const sharedFeedIds = new Set(shared.feeds.map(f => f.id));
+  const sharedSleepIds = new Set(shared.sleeps.map(s => s.id));
+  const feedsToPush = allFeeds.filter(f => !seedFeedIds.has(f.id) && !sharedFeedIds.has(f.id));
+  const sleepsToPush = allSleeps.filter(s => !seedSleepIds.has(s.id) && !sharedSleepIds.has(s.id));
+  if (feedsToPush.length > 0 || sleepsToPush.length > 0) {
+    pushEntries(feedsToPush, sleepsToPush).catch(() => {});
+  }
+
   useStore.getState().loadData(allFeeds, allSleeps);
 }
 
