@@ -295,9 +295,10 @@ export function analyzeSleep(
   // ── Next nap prediction ──
   let nextNap: SleepPrediction | null = null;
 
-  // Max start hour for a nap — ensures enough wake window before bedtime.
-  // Applied as a final filter for 'naps_done' (quota met but early enough to nap again).
-  const NAP_CUTOFF_HOUR = 17.5;
+  // Max start hour for a nap — hard cap regardless of status (no nap after 21h).
+  // Also ensures we stay on the same calendar day as 'now'.
+  const NAP_CUTOFF_HOUR = 17.5; // used only for naps_done
+  const NAP_MAX_HOUR = 21.0;    // hard cap for all statuses
 
   // night_active returns early above — sleepStatus is always a daytime value here
   {
@@ -331,10 +332,13 @@ export function analyzeSleep(
     } else {
       // Normal nap prediction using positional interval or fallback chain
 
-      // Helper : rejette un temps si naps_done et après le cutoff
-      const beforeCutoff = (t: Date) =>
-        sleepStatus !== 'naps_done' ||
-        t.getHours() + t.getMinutes() / 60 < NAP_CUTOFF_HOUR;
+      // Helper : rejette un temps si après le cutoff ou hors du jour courant
+      const beforeCutoff = (t: Date) => {
+        const isSameDay = t.toDateString() === now.toDateString();
+        const hourOfDay = t.getHours() + t.getMinutes() / 60;
+        return isSameDay && hourOfDay < NAP_MAX_HOUR &&
+          (sleepStatus !== 'naps_done' || hourOfDay < NAP_CUTOFF_HOUR);
+      };
 
       if (lastTodayNap?.endTime) {
         // ── Stratégies A : sieste déjà saisie aujourd'hui ──
@@ -520,8 +524,11 @@ export function analyzeSleep(
     const diffMin = differenceInMinutes(napBasedBedtime, bedtimeDate);
 
     if (diffMin > 0) {
-      // Sieste tardive → repousse le coucher
-      bedtimeDate = napBasedBedtime;
+      // Sieste tardive → repousse le coucher, mais pas au-delà du jour courant
+      if (napBasedBedtime.toDateString() === now.toDateString()) {
+        bedtimeDate = napBasedBedtime;
+      }
+      // Si napBasedBedtime tombe le lendemain, on garde la médiane historique
     } else if (diffMin < -15) {
       // Sieste plus tôt que d'habitude → avance légèrement le coucher
       // 40% de la différence, plafonné à 45 min d'avance sur la médiane historique
@@ -544,6 +551,17 @@ export function analyzeSleep(
       confidenceMin: bedtimeConfidence,
       estimatedDurationMin: avgNightDuration,
     };
+  }
+
+  // ── Cohérence sieste / coucher ──
+  // Si le coucher est trop proche de la fin estimée de la prochaine sieste
+  // (pas le temps pour un cycle complet réveil → coucher), on retire la sieste.
+  if (nextNap && bedtime) {
+    const napEndEstimate = nextNap.predictedTime.getTime() + nextNap.estimatedDurationMin * 60_000;
+    const minWakeBeforeBed = 30 * 60_000; // au moins 30 min d'éveil entre fin sieste et coucher
+    if (bedtime.predictedTime.getTime() < napEndEstimate + minWakeBeforeBed) {
+      nextNap = null;
+    }
   }
 
   return {
