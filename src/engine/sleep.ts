@@ -455,6 +455,42 @@ export function analyzeSleep(
   // IQR-based confidence for bedtime
   const bedtimeConfidence = iqrConfidence(bedtimeMinutes);
 
+  // ── Data-driven wake window: median(nightStart − lastNapEnd) from history ──
+  // Plus fiable que le hardcode 60 min — suit la réalité de chaque bébé.
+  const wakeWindowsBeforeNight: number[] = [];
+  const wakeWindowWeights: number[] = [];
+  const napsByDayMap = new Map<string, SleepRecord[]>();
+  const nightByDayMap = new Map<string, SleepRecord>();
+
+  for (const s of babySleeps) {
+    const dayKey = startOfDay(s.startTime).toISOString();
+    if (s.startTime.getHours() >= NIGHT_SLEEP.minStartHour && s.durationMin >= NIGHT_SLEEP.minDurationMin) {
+      nightByDayMap.set(dayKey, s);
+    } else if (s.startTime.getHours() >= 6 && s.durationMin < NIGHT_SLEEP.minDurationMin) {
+      const list = napsByDayMap.get(dayKey) ?? [];
+      list.push(s);
+      napsByDayMap.set(dayKey, list);
+    }
+  }
+
+  for (const [dayKey, dayNaps] of napsByDayMap.entries()) {
+    const night = nightByDayMap.get(dayKey);
+    if (!night) continue;
+    const lastNapOfDay = [...dayNaps].sort((a, b) => b.startTime.getTime() - a.startTime.getTime())[0];
+    if (!lastNapOfDay.endTime) continue;
+    const ww = differenceInMinutes(night.startTime, lastNapOfDay.endTime);
+    if (ww > 30 && ww < 240) {
+      wakeWindowsBeforeNight.push(ww);
+      wakeWindowWeights.push(recencyWeight(night.startTime, now));
+    }
+  }
+
+  // Default 90 min (cohérent avec les fenêtres d'éveil à 4–6 mois)
+  const medianWakeWindowBeforeNight =
+    wakeWindowsBeforeNight.length >= 3
+      ? Math.round(weightedMedian(wakeWindowsBeforeNight, wakeWindowWeights))
+      : 90;
+
   let bedtimeDate = new Date(now);
   bedtimeDate.setHours(
     Math.floor(medianBedtimeMin / 60),
@@ -463,28 +499,34 @@ export function analyzeSleep(
     0,
   );
 
-  // Adjust bedtime based on today's context:
-  // Only adjust if all expected naps are done — otherwise deficit is misleading
-  if (napsToday >= defaults.napsPerDay) {
-    if (sleepDeficit > 30) {
-      // Pull bedtime earlier: ~10 min per 30 min deficit, capped at 30 min
-      const pullMin = Math.min(30, Math.round(sleepDeficit * 0.33));
-      bedtimeDate = new Date(bedtimeDate.getTime() - pullMin * 60_000);
-    }
+  // ── Déficit de sommeil → avance le coucher ──
+  // Déclenché si le quota est atteint OU si la journée est effectivement
+  // terminée (≥17h) — évite d'attendre une sieste qui n'arrivera pas.
+  const dayEffectivelyDone = napsToday >= defaults.napsPerDay || now.getHours() >= 17;
+  if (dayEffectivelyDone && sleepDeficit > 30) {
+    // ~15 min par 30 min de déficit, plafonné à 60 min (au lieu de 30 min)
+    const pullMin = Math.min(60, Math.round(sleepDeficit * 0.5));
+    bedtimeDate = new Date(bedtimeDate.getTime() - pullMin * 60_000);
   }
 
-  // Wake-window adjustments — basées sur la dernière sieste du jour
+  // ── Dernière sieste → ajustement bidirectionnel ──
+  // Utilise la fenêtre d'éveil calculée depuis les données (au lieu du hardcode 60 min).
+  // Peut avancer OU reculer le coucher selon l'heure réelle de fin de sieste.
   const lastNapForBedtime = todayNaps.length > 0 ? todayNaps[todayNaps.length - 1] : null;
   if (lastNapForBedtime?.endTime) {
-    // Push vers l'arrière : si la dernière sieste se termine APRÈS l'heure
-    // de dodo prédite (typique pour les siestes tardives, ex: sieste à 22h),
-    // repousser le dodo à lastNap.endTime + fenêtre d'éveil minimale.
-    const MIN_WAKE_BEFORE_NIGHT_MIN = 60;
-    const minBedtimeAfterNap = new Date(
-      lastNapForBedtime.endTime.getTime() + MIN_WAKE_BEFORE_NIGHT_MIN * 60_000,
+    const napBasedBedtime = new Date(
+      lastNapForBedtime.endTime.getTime() + medianWakeWindowBeforeNight * 60_000,
     );
-    if (minBedtimeAfterNap > bedtimeDate) {
-      bedtimeDate = minBedtimeAfterNap;
+    const diffMin = differenceInMinutes(napBasedBedtime, bedtimeDate);
+
+    if (diffMin > 0) {
+      // Sieste tardive → repousse le coucher
+      bedtimeDate = napBasedBedtime;
+    } else if (diffMin < -15) {
+      // Sieste plus tôt que d'habitude → avance légèrement le coucher
+      // 40% de la différence, plafonné à 45 min d'avance sur la médiane historique
+      const pullMin = Math.min(45, Math.round(Math.abs(diffMin) * 0.4));
+      bedtimeDate = new Date(bedtimeDate.getTime() - pullMin * 60_000);
     }
   }
 
