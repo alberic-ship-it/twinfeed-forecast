@@ -48,6 +48,7 @@ interface Store {
   startNight: (baby: BabyName) => void;
   endNight: (baby: BabyName) => void;
   cancelNight: (baby: BabyName) => void;
+  logPastNight: (baby: BabyName, startTime: Date, endTime: Date) => void;
   updateNightStartTime: (baby: BabyName, newStartTime: Date) => void;
   dismissNightRecap: (baby: BabyName) => void;
   deleteNightRecap: (sessionId: string) => void;
@@ -457,6 +458,45 @@ export const useStore = create<Store>((set, get) => ({
     set({ nightSessions: updated });
     saveNightSessions(updated);
     pushNightSessions(updated, get().nightRecaps).catch(() => {});
+  },
+
+  logPastNight: (baby, startTime, endTime) => {
+    const { nightRecaps, nightSessions, sleeps } = get();
+    // Ne pas enregistrer si une session active est en cours
+    if (nightSessions[baby] && !nightSessions[baby]!.endTime) return;
+    const totalDurationMin = Math.round((endTime.getTime() - startTime.getTime()) / 60_000);
+    if (totalDurationMin <= 0) return;
+
+    const sessionId = crypto.randomUUID();
+    const session: NightSession = { id: sessionId, baby, startTime, endTime, feeds: [] };
+    const nightSleep: SleepRecord = {
+      id: crypto.randomUUID(),
+      baby,
+      startTime,
+      endTime,
+      durationMin: totalDurationMin,
+    };
+    const recap: NightRecap = {
+      baby,
+      session,
+      totalDurationMin,
+      feedCount: 0,
+      totalVolumeMl: 0,
+      longestStretchMin: totalDurationMin,
+      avgInterFeedMin: 0,
+      dismissed: false,
+    };
+
+    const newRecaps = [...nightRecaps.filter((r) => r.baby !== baby || r.dismissed), recap];
+    const allSleeps = [...sleeps, nightSleep].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+
+    set({ nightRecaps: newRecaps, sleeps: allSleeps });
+    saveNightRecapsToStorage(newRecaps);
+    saveEntriesCache(get().feeds, allSleeps);
+    pushNightSessions(nightSessions, newRecaps).catch(() => {});
+    pushEntries([], [nightSleep]).catch(() => {});
+    _lastRefreshKey = '';
+    get().refreshPredictions();
   },
 
   dismissNightRecap: (baby) => {

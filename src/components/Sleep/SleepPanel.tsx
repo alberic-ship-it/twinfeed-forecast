@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Lightbulb, BookOpen, Moon } from 'lucide-react';
+import { Lightbulb, BookOpen, Moon, History } from 'lucide-react';
 import type { BabyName, FeedSleepAnalysis, InsightConfidence } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
 import { useStore } from '../../store';
@@ -58,6 +58,57 @@ const QUALITY_COLORS: Record<string, string> = {
   poor: 'bg-red-100 text-red-700',
 };
 
+interface PastNightFormProps {
+  pastStart: string; setPastStart: (v: string) => void;
+  pastEnd: string; setPastEnd: (v: string) => void;
+  pastError: string | null;
+  onSubmit: () => void;
+  onCancel: () => void;
+}
+
+function PastNightForm({ pastStart, setPastStart, pastEnd, setPastEnd, pastError, onSubmit, onCancel }: PastNightFormProps) {
+  return (
+    <div className="bg-gray-50 rounded-lg p-2.5 space-y-2 border border-gray-200 mt-1">
+      <p className="text-[11px] text-gray-500 font-medium">Nuit passée</p>
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <p className="text-[10px] text-gray-400 mb-0.5">Coucher</p>
+          <input
+            type="time"
+            value={pastStart}
+            onChange={(e) => setPastStart(e.target.value)}
+            className="w-full text-xs bg-white text-gray-700 rounded px-1.5 py-1 border border-gray-300 outline-none"
+          />
+        </div>
+        <div className="flex-1">
+          <p className="text-[10px] text-gray-400 mb-0.5">Réveil</p>
+          <input
+            type="time"
+            value={pastEnd}
+            onChange={(e) => setPastEnd(e.target.value)}
+            className="w-full text-xs bg-white text-gray-700 rounded px-1.5 py-1 border border-gray-300 outline-none"
+          />
+        </div>
+      </div>
+      {pastError && <p className="text-[11px] text-red-500">{pastError}</p>}
+      <div className="flex gap-1.5">
+        <button
+          onClick={onCancel}
+          className="flex-1 py-1.5 rounded text-xs text-gray-400 bg-gray-200 hover:bg-gray-300 transition-colors"
+        >
+          Annuler
+        </button>
+        <button
+          onClick={onSubmit}
+          className="flex-1 py-1.5 rounded text-xs font-medium text-white bg-purple-500 hover:bg-purple-400 transition-colors"
+        >
+          Enregistrer
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Pick 1 insight per baby, prioritizing the hourly contextual insight
  * (tied to the current time slot). Falls back to general insights
@@ -78,9 +129,45 @@ function pickHourlyInsight(insights: FeedSleepAnalysis | null, hour: number) {
   return all[idx];
 }
 
+function buildTimestamp(timeStr: string): Date {
+  const [h, m] = timeStr.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  if (d.getTime() > Date.now() + 60_000) d.setDate(d.getDate() - 1);
+  return d;
+}
+
 export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProps) {
   const startNight = useStore((s) => s.startNight);
+  const logPastNight = useStore((s) => s.logPastNight);
   const nightSessions = useStore((s) => s.nightSessions);
+
+  // Formulaire "nuit passée" — un seul formulaire actif à la fois
+  const [pastNightBaby, setPastNightBaby] = useState<BabyName | null>(null);
+  const [pastStart, setPastStart] = useState('21:00');
+  const [pastEnd, setPastEnd] = useState('07:00');
+  const [pastError, setPastError] = useState<string | null>(null);
+
+  const openPastNightForm = (baby: BabyName) => {
+    setPastNightBaby(baby);
+    setPastStart('21:00');
+    setPastEnd('07:00');
+    setPastError(null);
+  };
+
+  const submitPastNight = (baby: BabyName) => {
+    const start = buildTimestamp(pastStart);
+    const end = buildTimestamp(pastEnd);
+    if (end <= start) {
+      // Heure de fin = matin suivant le début
+      end.setDate(end.getDate() + (end <= start ? 1 : 0));
+    }
+    const durationMin = Math.round((end.getTime() - start.getTime()) / 60_000);
+    if (durationMin < 60) { setPastError('Durée trop courte (min. 1h)'); return; }
+    if (durationMin > 900) { setPastError('Durée trop longue (max. 15h)'); return; }
+    logPastNight(baby, start, end);
+    setPastNightBaby(null);
+  };
 
   const coletteInsight = useMemo(() => pickHourlyInsight(feedSleepInsights.colette, hour), [feedSleepInsights.colette, hour]);
   const isaureInsight = useMemo(() => pickHourlyInsight(feedSleepInsights.isaure, hour), [feedSleepInsights.isaure, hour]);
@@ -174,14 +261,32 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
                     <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-medium ${QUALITY_COLORS[analysis.sleepQuality]}`}>
                       {analysis.sleepQuality === 'good' ? 'Bon sommeil' : analysis.sleepQuality === 'fair' ? 'Sommeil moyen' : 'Sommeil insuffisant'}
                     </span>
-                    {!nightActive && (
-                      <button
-                        onClick={() => startNight(baby)}
-                        className="flex items-center gap-1 px-2 py-1 bg-purple-100 hover:bg-purple-200 active:bg-purple-300 text-purple-600 text-[11px] font-medium rounded transition-colors"
-                      >
-                        <Moon size={11} />
-                        Lancer la nuit
-                      </button>
+                    {!nightActive && pastNightBaby !== baby && (
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          onClick={() => startNight(baby)}
+                          className="flex items-center gap-1 px-2 py-1 bg-purple-100 hover:bg-purple-200 active:bg-purple-300 text-purple-600 text-[11px] font-medium rounded transition-colors"
+                        >
+                          <Moon size={11} />
+                          Lancer la nuit
+                        </button>
+                        <button
+                          onClick={() => openPastNightForm(baby)}
+                          className="flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-500 text-[11px] font-medium rounded transition-colors"
+                        >
+                          <History size={11} />
+                          Nuit passée
+                        </button>
+                      </div>
+                    )}
+                    {pastNightBaby === baby && (
+                      <PastNightForm
+                        pastStart={pastStart} setPastStart={setPastStart}
+                        pastEnd={pastEnd} setPastEnd={setPastEnd}
+                        pastError={pastError}
+                        onSubmit={() => submitPastNight(baby)}
+                        onCancel={() => setPastNightBaby(null)}
+                      />
                     )}
                   </div>
                 );
