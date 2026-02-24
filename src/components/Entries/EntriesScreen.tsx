@@ -36,7 +36,10 @@ export function EntriesScreen() {
   const nightRecaps = useStore((s) => s.nightRecaps);
   const deleteFeed = useStore((s) => s.deleteFeed);
   const deleteSleep = useStore((s) => s.deleteSleep);
+  const cancelNight = useStore((s) => s.cancelNight);
+  const deleteNightRecap = useStore((s) => s.deleteNightRecap);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmDeleteNight, setConfirmDeleteNight] = useState<string | null>(null);
 
   // Build a set of feed IDs that belong to a night session (active or recent recap)
   // These are already shown in the "Nuits" section, so we exclude them from "Repas"
@@ -194,17 +197,46 @@ export function EntriesScreen() {
                 : Math.round((Date.now() - session.startTime.getTime()) / 60000);
               return (
                 <div key={session.id} className="pl-1 space-y-1">
-                  <p className="text-xs text-gray-500">
-                    <span className="text-gray-400">{formatTime(session.startTime)}</span>
-                    {session.endTime ? (
-                      <> → <span className="text-gray-400">{formatTime(session.endTime)}</span></>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-500 flex-1">
+                      <span className="text-gray-400">{formatTime(session.startTime)}</span>
+                      {session.endTime ? (
+                        <> → <span className="text-gray-400">{formatTime(session.endTime)}</span></>
+                      ) : (
+                        <> — <span className="text-indigo-400 font-medium">en cours</span></>
+                      )}
+                      {' · '}{formatDuration(durationMin)}
+                      {session.feeds.length > 0 && <> · {session.feeds.length} repas</>}
+                    </p>
+                    {confirmDeleteNight === session.id ? (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => {
+                            if (isActive) cancelNight(baby);
+                            else deleteNightRecap(session.id);
+                            setConfirmDeleteNight(null);
+                          }}
+                          className="text-[11px] text-red-500 font-medium px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 active:bg-red-200 transition-colors"
+                        >
+                          Suppr
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteNight(null)}
+                          className="text-[11px] text-gray-400 px-1 py-0.5"
+                        >
+                          Non
+                        </button>
+                      </div>
                     ) : (
-                      <> — <span className="text-indigo-400 font-medium">en cours</span></>
+                      <button
+                        onClick={() => setConfirmDeleteNight(session.id)}
+                        className="p-1.5 text-gray-300 hover:text-red-400 active:text-red-500 transition-colors shrink-0"
+                        title="Supprimer"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     )}
-                    {' · '}{formatDuration(durationMin)}
-                    {session.feeds.length > 0 && <> · {session.feeds.length} repas</>}
-                    {isActive && !session.endTime && session.feeds.length === 0 && null}
-                  </p>
+                  </div>
                   {session.feeds.map((f) => (
                     <p key={f.id} className="text-sm text-gray-600 pl-2">
                       <span className="text-gray-400">{formatTime(f.timestamp)}</span>

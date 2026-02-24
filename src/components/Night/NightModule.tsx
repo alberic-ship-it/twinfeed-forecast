@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Moon, Square, Pencil, Plus, X, Check } from 'lucide-react';
+import { Moon, Square, Pencil, Plus, X, Check, Trash2 } from 'lucide-react';
 import type { BabyName } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
 import { useStore } from '../../store';
@@ -41,12 +41,14 @@ function buildTimestamp(timeStr: string): Date {
 export function NightModule({ analyses }: NightModuleProps) {
   const nightSessions = useStore((s) => s.nightSessions);
   const endNight = useStore((s) => s.endNight);
+  const cancelNight = useStore((s) => s.cancelNight);
   const logFeed = useStore((s) => s.logFeed);
   const updateNightStartTime = useStore((s) => s.updateNightStartTime);
   const [, setTick] = useState(0);
 
   // Form state — one active form at a time
   const [activeForm, setActiveForm] = useState<{ baby: BabyName; kind: 'feed' | 'editStart' } | null>(null);
+  const [cancelConfirmBaby, setCancelConfirmBaby] = useState<BabyName | null>(null);
   const [feedType, setFeedType] = useState<'bottle' | 'breast'>('bottle');
   const [mlValue, setMlValue] = useState(130);
   const [customTimeStr, setCustomTimeStr] = useState('');
@@ -287,22 +289,46 @@ export function NightModule({ analyses }: NightModuleProps) {
 
               {/* Action buttons */}
               {!showFeedForm && (
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => openFeedForm(baby)}
-                    className="flex items-center gap-1 px-2.5 py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-300 text-xs font-medium rounded-lg transition-colors flex-1 justify-center"
-                  >
-                    <Plus size={12} />
-                    Réveil
-                  </button>
-                  <button
-                    onClick={() => endNight(baby)}
-                    className="flex items-center gap-1.5 px-2.5 py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-200 text-xs font-medium rounded-lg transition-colors flex-1 justify-center"
-                  >
-                    <Square size={12} />
-                    Terminer
-                  </button>
-                </div>
+                cancelConfirmBaby === baby ? (
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => { cancelNight(baby); setCancelConfirmBaby(null); }}
+                      className="flex-1 py-2 rounded-lg text-xs font-medium text-white bg-red-500 hover:bg-red-400 active:bg-red-600 transition-colors"
+                    >
+                      Supprimer
+                    </button>
+                    <button
+                      onClick={() => setCancelConfirmBaby(null)}
+                      className="flex-1 py-2 rounded-lg text-xs text-slate-400 bg-slate-700 hover:bg-slate-600 transition-colors"
+                    >
+                      Conserver
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => openFeedForm(baby)}
+                      className="flex items-center gap-1 px-2.5 py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-300 text-xs font-medium rounded-lg transition-colors flex-1 justify-center"
+                    >
+                      <Plus size={12} />
+                      Réveil
+                    </button>
+                    <button
+                      onClick={() => endNight(baby)}
+                      className="flex items-center gap-1.5 px-2.5 py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-200 text-xs font-medium rounded-lg transition-colors flex-1 justify-center"
+                    >
+                      <Square size={12} />
+                      Terminer
+                    </button>
+                    <button
+                      onClick={() => setCancelConfirmBaby(baby)}
+                      className="p-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-500 hover:text-red-400 rounded-lg transition-colors"
+                      title="Supprimer cette session"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                )
               )}
             </div>
           );

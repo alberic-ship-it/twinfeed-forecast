@@ -47,8 +47,10 @@ interface Store {
   deleteFeed: (id: string) => void;
   startNight: (baby: BabyName) => void;
   endNight: (baby: BabyName) => void;
+  cancelNight: (baby: BabyName) => void;
   updateNightStartTime: (baby: BabyName, newStartTime: Date) => void;
   dismissNightRecap: (baby: BabyName) => void;
+  deleteNightRecap: (sessionId: string) => void;
   refreshPredictions: () => void;
   dismissAlert: (id: string) => void;
   reset: () => void;
@@ -448,12 +450,41 @@ export const useStore = create<Store>((set, get) => ({
     get().refreshPredictions();
   },
 
+  cancelNight: (baby) => {
+    const { nightSessions } = get();
+    if (!nightSessions[baby]) return;
+    const updated = { ...nightSessions, [baby]: null };
+    set({ nightSessions: updated });
+    saveNightSessions(updated);
+    pushNightSessions(updated).catch(() => {});
+  },
+
   dismissNightRecap: (baby) => {
     const newRecaps = get().nightRecaps.map((r) =>
       r.baby === baby ? { ...r, dismissed: true } : r
     );
     set({ nightRecaps: newRecaps });
     saveNightRecapsToStorage(newRecaps);
+  },
+
+  deleteNightRecap: (sessionId) => {
+    const { nightRecaps, sleeps } = get();
+    const recap = nightRecaps.find((r) => r.session.id === sessionId);
+    if (!recap) return;
+    const newRecaps = nightRecaps.filter((r) => r.session.id !== sessionId);
+    // Retrouver le SleepRecord créé par endNight pour cette session
+    const sleepToDelete = sleeps.find(
+      (s) => s.baby === recap.baby && s.startTime.getTime() === recap.session.startTime.getTime()
+    );
+    const newSleeps = sleepToDelete ? sleeps.filter((s) => s.id !== sleepToDelete.id) : sleeps;
+    set({ nightRecaps: newRecaps, sleeps: newSleeps });
+    saveNightRecapsToStorage(newRecaps);
+    saveEntriesCache(get().feeds, newSleeps);
+    if (sleepToDelete) {
+      deleteServerEntries({ deleteSleepIds: [sleepToDelete.id] }).catch(() => {});
+    }
+    _lastRefreshKey = '';
+    get().refreshPredictions();
   },
 
   refreshPredictions: () => {
