@@ -54,10 +54,10 @@ src/
 └── components/
     ├── Dashboard/DashboardScreen.tsx    # Écran principal
     ├── BabyCard/BabyCard.tsx           # Carte bébé (prédiction + dernière saisie)
-    ├── QuickLog/QuickLog.tsx           # Saisie rapide repas (+ confirmation 3s)
+    ├── QuickLog/QuickLog.tsx           # Saisie rapide repas : biberon, tétée, solide (portion)
     ├── QuickLog/SleepLog.tsx           # Saisie rapide sieste (+ confirmation 3s)
     ├── Sleep/SleepPanel.tsx            # Panneau analyse sommeil
-    ├── Night/NightModule.tsx           # Module nuit (start/end + repas nocturnes)
+    ├── Night/NightModule.tsx           # Module nuit (start/end + réveils + édition heure début)
     ├── Night/NightRecap.tsx            # Récap de nuit
     ├── Entries/EntriesScreen.tsx       # Saisies du jour (repas, siestes, nuits)
     ├── Insights/InsightsScreen.tsx     # Statistiques & patterns détectés
@@ -73,12 +73,15 @@ netlify/functions/
 ## Modèles de données clés
 
 ```typescript
-FeedRecord    { id, baby, timestamp, type: 'bottle'|'breast', volumeMl }
+FeedRecord    { id, baby, timestamp, type: 'bottle'|'breast'|'solid', volumeMl, notes? }
 SleepRecord   { id, baby, startTime, endTime?, durationMin }
 NightSession  { id, baby, startTime, endTime?, feeds: NightFeedEntry[] }
 NightRecap    { baby, session, totalDurationMin, feedCount, totalVolumeMl, … }
 DetectedPattern { id: PatternId, label, description, baby, timingModifier?, volumeModifier? }
 ```
+
+> **Repas solides** : `type: 'solid'`, `volumeMl: 0`, `notes` = portion (`'petite'|'normale'|'grande'`).
+> Les solides sont **exclus des moteurs** (prédictions, patterns, alertes, corrélations sommeil) via un filtre `milkFeeds` dans `refreshPredictions()` — les calculs restent basés uniquement sur biberon + tétée.
 
 ## Patterns détectés (15 au total)
 
@@ -109,10 +112,12 @@ Rotation : **Fisher-Yates seedé par `dayOfYear`** → mélange différent chaqu
 
 ## Store Zustand — points d'attention
 
-- **`refreshPredictions()`** : recalcule tout (prédictions, patterns, alertes, analyses sommeil). Debounce via `_lastRefreshKey` (inclut IDs premier/dernier feed).
+- **`refreshPredictions()`** : recalcule tout (prédictions, patterns, alertes, analyses sommeil). Debounce via `_lastRefreshKey` (inclut IDs premier/dernier feed). Filtre `milkFeeds` (exclut `'solid'`) avant chaque appel moteur.
 - **`_refreshInsights()`** est appelé **en interne** par `refreshPredictions()` — ne pas l'appeler séparément.
-- **`logFeed()`** inclut un garde anti-doublon : même baby/type/volume dans les 60s → rejeté.
+- **`logFeed(baby, type, ml?, timestamp?, notes?)`** : retourne `boolean` (`false` = rejeté par garde anti-doublon). Garde : même baby/type/volume dans les 60s → rejeté silencieusement côté store, mais le UI affiche "Déjà enregistré". Heure future (>1 min) bloquée dans le UI avant appel.
 - **`nightSessions`** (actif) vs **`nightRecaps`** (terminé) : deux états séparés.
+- **`updateNightStartTime(baby, newStartTime)`** : corrige l'heure de début d'une session active (persiste localStorage + serveur).
+- **Alertes dismissées** : persistées en `localStorage` (clé `twinfeed-dismissed-alerts`) — survivent aux rechargements.
 
 ## Sync serveur
 
