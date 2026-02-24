@@ -1,4 +1,4 @@
-import type { FeedRecord, SleepRecord, BabyName, NightSession } from '../types';
+import type { FeedRecord, SleepRecord, BabyName, NightSession, NightRecap } from '../types';
 
 const API_URL = '/.netlify/functions/sync';
 const FETCH_TIMEOUT_MS = 8_000;
@@ -126,21 +126,71 @@ function deserializeNightSession(raw: Record<string, unknown> | null): NightSess
   };
 }
 
-/** Push night sessions to server. */
-export async function pushNightSessions(sessions: Record<BabyName, NightSession | null>): Promise<void> {
+const RECAP_TTL_MS = 48 * 60 * 60 * 1000; // 48h
+
+function serializeNightRecap(r: NightRecap): Record<string, unknown> {
+  return {
+    ...r,
+    session: {
+      ...r.session,
+      startTime: r.session.startTime.toISOString(),
+      endTime: r.session.endTime?.toISOString(),
+      feeds: r.session.feeds.map((f) => ({ ...f, timestamp: f.timestamp.toISOString() })),
+    },
+  };
+}
+
+function deserializeNightRecap(raw: Record<string, unknown>): NightRecap {
+  const s = raw.session as Record<string, unknown>;
+  return {
+    ...raw,
+    session: {
+      ...s,
+      startTime: new Date(s.startTime as string),
+      endTime: s.endTime ? new Date(s.endTime as string) : undefined,
+      feeds: ((s.feeds as Record<string, unknown>[]) ?? []).map((f) => ({
+        id: f.id as string,
+        baby: f.baby as BabyName,
+        timestamp: new Date(f.timestamp as string),
+        type: f.type as 'bottle' | 'breast',
+        volumeMl: f.volumeMl as number,
+      })),
+    },
+  } as NightRecap;
+}
+
+/** Push night sessions + recaps to server. */
+export async function pushNightSessions(
+  sessions: Record<BabyName, NightSession | null>,
+  recaps: NightRecap[],
+): Promise<void> {
+  const cutoff = Date.now() - RECAP_TTL_MS;
+  const payload = {
+    ...serializeNightSessions(sessions),
+    recaps: recaps
+      .filter((r) => r.session.startTime.getTime() > cutoff)
+      .map(serializeNightRecap),
+  };
   await fetchWithTimeout(NIGHT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(serializeNightSessions(sessions)),
+    body: JSON.stringify(payload),
   });
 }
 
-/** Fetch night sessions from server. */
-export async function fetchNightSessions(): Promise<Record<BabyName, NightSession | null>> {
+/** Fetch night sessions + recaps from server. */
+export async function fetchNightSessions(): Promise<{
+  sessions: Record<BabyName, NightSession | null>;
+  recaps: NightRecap[];
+}> {
   const res = await fetchWithTimeout(NIGHT_URL);
-  const data = await res.json() as Record<string, Record<string, unknown> | null>;
+  const data = await res.json() as Record<string, unknown>;
+  const rawRecaps = (data.recaps as Record<string, unknown>[] | undefined) ?? [];
   return {
-    colette: deserializeNightSession(data.colette ?? null),
-    isaure: deserializeNightSession(data.isaure ?? null),
+    sessions: {
+      colette: deserializeNightSession(data.colette as Record<string, unknown> | null ?? null),
+      isaure: deserializeNightSession(data.isaure as Record<string, unknown> | null ?? null),
+    },
+    recaps: rawRecaps.map(deserializeNightRecap),
   };
 }

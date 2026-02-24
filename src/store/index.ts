@@ -295,7 +295,7 @@ export const useStore = create<Store>((set, get) => ({
       const updatedSessions = { ...nightSessions, [baby]: updatedSession };
       set({ feeds: allFeeds, dataLoaded: true, nightSessions: updatedSessions });
       saveNightSessions(updatedSessions);
-      pushNightSessions(updatedSessions).catch(() => {});
+      pushNightSessions(updatedSessions, get().nightRecaps).catch(() => {});
     } else {
       set({ feeds: allFeeds, dataLoaded: true });
     }
@@ -367,7 +367,7 @@ export const useStore = create<Store>((set, get) => ({
     const updated = { ...nightSessions, [baby]: session };
     set({ nightSessions: updated });
     saveNightSessions(updated);
-    pushNightSessions(updated).catch(() => {});
+    pushNightSessions(updated, get().nightRecaps).catch(() => {});
   },
 
   endNight: (baby) => {
@@ -429,7 +429,7 @@ export const useStore = create<Store>((set, get) => ({
     saveNightSessions(updatedSessions);
     saveNightRecapsToStorage(newRecaps);
     saveEntriesCache(get().feeds, allSleeps);
-    pushNightSessions(updatedSessions).catch(() => {});
+    pushNightSessions(updatedSessions, newRecaps).catch(() => {});
     pushEntries([], [nightSleep]).catch(() => {});
 
     // Force refresh predictions with new sleep data
@@ -445,7 +445,7 @@ export const useStore = create<Store>((set, get) => ({
     const updatedSessions = { ...nightSessions, [baby]: updatedSession };
     set({ nightSessions: updatedSessions });
     saveNightSessions(updatedSessions);
-    pushNightSessions(updatedSessions).catch(() => {});
+    pushNightSessions(updatedSessions, get().nightRecaps).catch(() => {});
     _lastRefreshKey = '';
     get().refreshPredictions();
   },
@@ -456,7 +456,7 @@ export const useStore = create<Store>((set, get) => ({
     const updated = { ...nightSessions, [baby]: null };
     set({ nightSessions: updated });
     saveNightSessions(updated);
-    pushNightSessions(updated).catch(() => {});
+    pushNightSessions(updated, get().nightRecaps).catch(() => {});
   },
 
   dismissNightRecap: (baby) => {
@@ -465,6 +465,7 @@ export const useStore = create<Store>((set, get) => ({
     );
     set({ nightRecaps: newRecaps });
     saveNightRecapsToStorage(newRecaps);
+    pushNightSessions(get().nightSessions, newRecaps).catch(() => {});
   },
 
   deleteNightRecap: (sessionId) => {
@@ -480,6 +481,7 @@ export const useStore = create<Store>((set, get) => ({
     set({ nightRecaps: newRecaps, sleeps: newSleeps });
     saveNightRecapsToStorage(newRecaps);
     saveEntriesCache(get().feeds, newSleeps);
+    pushNightSessions(get().nightSessions, newRecaps).catch(() => {});
     if (sleepToDelete) {
       deleteServerEntries({ deleteSleepIds: [sleepToDelete.id] }).catch(() => {});
     }
@@ -646,6 +648,21 @@ function mergeSleeps(existing: SleepRecord[], incoming: SleepRecord[]): SleepRec
   );
 }
 
+function mergeNightRecaps(server: NightRecap[], local: NightRecap[]): NightRecap[] {
+  const localById = new Map(local.map((r) => [r.session.id, r]));
+  const serverById = new Map(server.map((r) => [r.session.id, r]));
+  // Server is source of truth for session data; local dismissed state takes priority
+  const merged = server.map((r) => ({
+    ...r,
+    dismissed: localById.get(r.session.id)?.dismissed ?? r.dismissed,
+  }));
+  // Add local recaps missing from server (push may have failed)
+  for (const r of local) {
+    if (!serverById.has(r.session.id)) merged.push(r);
+  }
+  return merged;
+}
+
 // ── Load seed CSVs from public/data/ as baseline ──
 
 export async function loadSeedData() {
@@ -718,20 +735,26 @@ async function migrateLocalStorage(): Promise<{ feeds: FeedRecord[]; sleeps: Sle
 export async function initData() {
   const seeds = await loadSeedData();
 
-  const [shared, migrated, serverNights] = await Promise.all([
+  const [shared, migrated, nightResult] = await Promise.all([
     fetchSharedEntries().catch(() => ({ feeds: [] as FeedRecord[], sleeps: [] as SleepRecord[] })),
     migrateLocalStorage(),
-    fetchNightSessions().catch(() => ({ colette: null, isaure: null } as Record<BabyName, NightSession | null>)),
+    fetchNightSessions().catch(() => ({ sessions: { colette: null, isaure: null } as Record<BabyName, NightSession | null>, recaps: [] as NightRecap[] })),
   ]);
 
   // Merge night sessions: prefer local (more up-to-date) over server
   const localNights = loadNightSessions();
   const mergedNights: Record<BabyName, NightSession | null> = { colette: null, isaure: null };
   for (const baby of ['colette', 'isaure'] as BabyName[]) {
-    mergedNights[baby] = localNights[baby] ?? serverNights[baby] ?? null;
+    mergedNights[baby] = localNights[baby] ?? nightResult.sessions[baby] ?? null;
   }
   saveNightSessions(mergedNights);
-  useStore.setState({ nightSessions: mergedNights });
+
+  // Merge night recaps: server + local (server is source of truth, local adds dismissed state)
+  const localRecaps = loadNightRecapsFromStorage();
+  const mergedRecaps = mergeNightRecaps(nightResult.recaps, localRecaps);
+  saveNightRecapsToStorage(mergedRecaps);
+
+  useStore.setState({ nightSessions: mergedNights, nightRecaps: mergedRecaps });
 
   // Include localStorage cache as fallback pour les entrées dont le push serveur a échoué
   const cached = loadEntriesCache();
@@ -755,12 +778,12 @@ export async function initData() {
 
 export async function syncFromServer() {
   try {
-    const [shared, serverNights] = await Promise.all([
+    const [shared, nightResult] = await Promise.all([
       fetchSharedEntries(),
-      fetchNightSessions().catch(() => ({ colette: null, isaure: null } as Record<BabyName, NightSession | null>)),
+      fetchNightSessions().catch(() => ({ sessions: { colette: null, isaure: null } as Record<BabyName, NightSession | null>, recaps: [] as NightRecap[] })),
     ]);
 
-    const { feeds, sleeps, nightSessions } = useStore.getState();
+    const { feeds, sleeps, nightSessions, nightRecaps } = useStore.getState();
 
     // Serveur fait autorité pour les données utilisateur — préserver uniquement les seeds locaux.
     // Cela garantit que les suppressions faites sur un appareil se propagent à l'autre.
@@ -771,11 +794,20 @@ export async function syncFromServer() {
     // Merge night sessions: local prend la priorité sur serveur
     const mergedNights: Record<BabyName, NightSession | null> = { colette: null, isaure: null };
     for (const baby of ['colette', 'isaure'] as BabyName[]) {
-      mergedNights[baby] = nightSessions[baby] ?? serverNights[baby] ?? null;
+      mergedNights[baby] = nightSessions[baby] ?? nightResult.sessions[baby] ?? null;
     }
     const nightsChanged = (['colette', 'isaure'] as BabyName[]).some(
       (b) => JSON.stringify(mergedNights[b]) !== JSON.stringify(nightSessions[b])
     );
+
+    // Merge night recaps
+    const mergedRecaps = mergeNightRecaps(nightResult.recaps, nightRecaps);
+    const recapsChanged = mergedRecaps.length !== nightRecaps.length ||
+      mergedRecaps.some((r, i) => r.session.id !== nightRecaps[i]?.session.id);
+    if (recapsChanged) {
+      saveNightRecapsToStorage(mergedRecaps);
+      useStore.setState({ nightRecaps: mergedRecaps });
+    }
     // Détecter les suppressions (pas seulement les ajouts) en comparant aussi les IDs
     const localFeedIds = new Set(feeds.map(f => f.id));
     const localSleepIds = new Set(sleeps.map(s => s.id));
