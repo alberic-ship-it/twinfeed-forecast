@@ -41,7 +41,7 @@ interface Store {
   setScreen: (screen: Screen) => void;
   loadData: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
   addFeeds: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
-  logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number, timestamp?: Date) => void;
+  logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number, timestamp?: Date) => boolean;
   logSleep: (baby: BabyName, durationMin: number, endTime?: Date) => void;
   deleteSleep: (id: string) => void;
   deleteFeed: (id: string) => void;
@@ -63,16 +63,16 @@ let _lastRefreshKey = '';
 let _lastRefreshTime = 0;
 const REFRESH_DEBOUNCE_MS = 10_000; // 10s minimum between identical refreshes
 
-// Track dismissed alert IDs across refreshes — persisted in sessionStorage
+// Track dismissed alert IDs across refreshes — persisted in localStorage
 const DISMISSED_KEY = 'twinfeed-dismissed-alerts';
 function loadDismissed(): Set<string> {
   try {
-    const raw = sessionStorage.getItem(DISMISSED_KEY);
+    const raw = localStorage.getItem(DISMISSED_KEY);
     return raw ? new Set(JSON.parse(raw)) : new Set();
   } catch { return new Set(); }
 }
 function saveDismissed(ids: Set<string>) {
-  sessionStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
+  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
 }
 const dismissedAlertIds = loadDismissed();
 
@@ -262,7 +262,7 @@ export const useStore = create<Store>((set, get) => ({
         f.volumeMl === (ml ?? 0) &&
         Math.abs(f.timestamp.getTime() - ts.getTime()) < 60_000
     );
-    if (isDuplicate) return;
+    if (isDuplicate) return false;
 
     const feed: FeedRecord = {
       id: crypto.randomUUID(),
@@ -302,6 +302,7 @@ export const useStore = create<Store>((set, get) => ({
 
     // Push to server
     pushEntries([feed], []).catch(() => {});
+    return true;
   },
 
   logSleep: (baby, durationMin, endTime?) => {
@@ -529,6 +530,7 @@ export const useStore = create<Store>((set, get) => ({
     saveNightSessions(emptyNights);
     localStorage.removeItem(ENTRIES_CACHE_KEY);
     localStorage.removeItem(NIGHT_RECAPS_KEY);
+    localStorage.removeItem(DISMISSED_KEY);
     clearSharedEntries().catch(() => {});
     loadSeedData();
   },

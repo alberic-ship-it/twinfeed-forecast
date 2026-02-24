@@ -29,17 +29,18 @@ export function usePredictions() {
     }))
   );
 
-  // refreshPredictions est une fonction stable (référence constante dans Zustand)
   const refreshPredictions = useStore((s) => s.refreshPredictions);
 
-  // Auto-refresh predictions every 5 minutes
+  // Auto-refresh predictions every 5 minutes.
+  // useStore.getState() évite une dépendance instable et garantit qu'un seul
+  // interval est créé au montage du composant.
   useEffect(() => {
     const interval = setInterval(() => {
-      refreshPredictions();
+      useStore.getState().refreshPredictions();
     }, 5 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, [refreshPredictions]);
+  }, []);
 
   return {
     predictions,

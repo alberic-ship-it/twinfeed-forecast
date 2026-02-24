@@ -81,6 +81,7 @@ export function NightModule({ analyses }: NightModuleProps) {
 
   const handleSubmitFeed = (baby: BabyName) => {
     if (!customTimeStr) return;
+    // logFeed returns false if rejected as near-duplicate — close form regardless
     logFeed(baby, feedType, feedType === 'bottle' ? mlValue : undefined, buildTimestamp(customTimeStr));
     closeForm();
   };

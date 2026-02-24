@@ -66,8 +66,10 @@ export function QuickLog() {
   const handleSubmitBottle = () => {
     if (!selectedBaby || submittingRef.current) return;
     submittingRef.current = true;
-    logFeed(selectedBaby, 'bottle', mlValue, buildTimestamp(customTimeStr));
-    const msg = `${PROFILES[selectedBaby].name} · ${mlValue} ml enregistré`;
+    const saved = logFeed(selectedBaby, 'bottle', mlValue, buildTimestamp(customTimeStr));
+    const msg = saved
+      ? `${PROFILES[selectedBaby].name} · ${mlValue} ml enregistré`
+      : `${PROFILES[selectedBaby].name} · Déjà enregistré`;
     setSelectedBaby(null);
     setShowBottle(false);
     setMlValue(130);
@@ -79,8 +81,10 @@ export function QuickLog() {
   const handleSubmitBreast = () => {
     if (!selectedBaby || submittingRef.current) return;
     submittingRef.current = true;
-    logFeed(selectedBaby, 'breast', undefined, buildTimestamp(customTimeStr));
-    const msg = `${PROFILES[selectedBaby].name} · Tétée enregistrée`;
+    const saved = logFeed(selectedBaby, 'breast', undefined, buildTimestamp(customTimeStr));
+    const msg = saved
+      ? `${PROFILES[selectedBaby].name} · Tétée enregistrée`
+      : `${PROFILES[selectedBaby].name} · Déjà enregistrée`;
     setSelectedBaby(null);
     setShowBreast(false);
     setCustomTimeStr('');
