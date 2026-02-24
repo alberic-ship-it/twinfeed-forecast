@@ -96,7 +96,7 @@ export const BEST_SYNC_WINDOWS = [
 // Seuil pour identifier un sommeil de nuit (vs sieste)
 export const NIGHT_SLEEP = {
   minStartHour: 19,
-  minDurationMin: 300,  // 5h — only count true night sleeps, not long evening naps
+  minDurationMin: 360,  // 6h — only count true night sleeps; excludes short/incomplete tracking sessions
 };
 
 // Wake windows pour bébés 4-6 mois (en minutes)
@@ -121,7 +121,7 @@ export interface SleepProfile {
 
 export const DEFAULT_SLEEP: Record<BabyName, SleepProfile> = {
   colette: {
-    nightDurationMin: 376,    // ~6h15
+    nightDurationMin: 570,    // ~9h30 — default for 6-month-old (historical data was unreliable)
     typicalBedtimeHour: 21,
     typicalWakeHour: 7,
     nightFeeds: 1,
@@ -134,7 +134,7 @@ export const DEFAULT_SLEEP: Record<BabyName, SleepProfile> = {
     ],
   },
   isaure: {
-    nightDurationMin: 387,    // ~6h27
+    nightDurationMin: 570,    // ~9h30 — default for 6-month-old (historical data was unreliable)
     typicalBedtimeHour: 21,
     typicalWakeHour: 7,
     nightFeeds: 1,
