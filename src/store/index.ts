@@ -41,7 +41,7 @@ interface Store {
   setScreen: (screen: Screen) => void;
   loadData: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
   addFeeds: (feeds: FeedRecord[], sleeps: SleepRecord[]) => void;
-  logFeed: (baby: BabyName, type: 'bottle' | 'breast', ml?: number, timestamp?: Date) => boolean;
+  logFeed: (baby: BabyName, type: 'bottle' | 'breast' | 'solid', ml?: number, timestamp?: Date, notes?: string) => boolean;
   logSleep: (baby: BabyName, durationMin: number, endTime?: Date) => void;
   deleteSleep: (id: string) => void;
   deleteFeed: (id: string) => void;
@@ -250,7 +250,7 @@ export const useStore = create<Store>((set, get) => ({
     pushEntries(nonSeedFeeds, nonSeedSleeps).catch(() => {});
   },
 
-  logFeed: (baby, type, ml, timestamp) => {
+  logFeed: (baby, type, ml, timestamp, notes) => {
     const ts = timestamp ?? new Date();
     const { feeds, nightSessions } = get();
 
@@ -270,6 +270,7 @@ export const useStore = create<Store>((set, get) => ({
       timestamp: ts,
       type,
       volumeMl: ml ?? 0,
+      ...(notes ? { notes } : {}),
     };
     const allFeeds = [...feeds, feed].sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
@@ -472,18 +473,23 @@ export const useStore = create<Store>((set, get) => ({
     _lastRefreshKey = refreshKey;
     _lastRefreshTime = now.getTime();
 
+    // Solides exclus des moteurs : les prédictions/patterns/alertes ne concernent
+    // que les repas lactés (biberon + tétée). Les solides sont conservés dans feeds
+    // pour l'affichage et les stats futures.
+    const milkFeeds = feeds.filter((f) => f.type !== 'solid');
+
     // Patterns calculés en premier pour éviter un double appel dans predictNextFeed
-    const colettePatterns = detectPatterns('colette', feeds, sleeps, now);
-    const isaurePatterns = detectPatterns('isaure', feeds, sleeps, now);
-    const colettePred = predictNextFeed('colette', feeds, sleeps, now, colettePatterns);
-    const isaurePred = predictNextFeed('isaure', feeds, sleeps, now, isaurePatterns);
-    const freshAlerts = generateAlerts(feeds).map((a) =>
+    const colettePatterns = detectPatterns('colette', milkFeeds, sleeps, now);
+    const isaurePatterns = detectPatterns('isaure', milkFeeds, sleeps, now);
+    const colettePred = predictNextFeed('colette', milkFeeds, sleeps, now, colettePatterns);
+    const isaurePred = predictNextFeed('isaure', milkFeeds, sleeps, now, isaurePatterns);
+    const freshAlerts = generateAlerts(milkFeeds).map((a) =>
       dismissedAlertIds.has(a.id) ? { ...a, dismissed: true } : a
     );
     const coletteNight = nightSessions.colette && !nightSessions.colette.endTime ? nightSessions.colette : undefined;
     const isaureNight = nightSessions.isaure && !nightSessions.isaure.endTime ? nightSessions.isaure : undefined;
-    const coletteSleep = analyzeSleep('colette', sleeps, feeds, now, coletteNight);
-    const isaureSleep = analyzeSleep('isaure', sleeps, feeds, now, isaureNight);
+    const coletteSleep = analyzeSleep('colette', sleeps, milkFeeds, now, coletteNight);
+    const isaureSleep = analyzeSleep('isaure', sleeps, milkFeeds, now, isaureNight);
 
     set({
       predictions: { colette: colettePred, isaure: isaurePred },
@@ -491,8 +497,8 @@ export const useStore = create<Store>((set, get) => ({
       patterns: [...colettePatterns, ...isaurePatterns],
       sleepAnalyses: { colette: coletteSleep, isaure: isaureSleep },
       feedSleepInsights: {
-        colette: analyzeFeedSleepLinks('colette', feeds, sleeps, now),
-        isaure: analyzeFeedSleepLinks('isaure', feeds, sleeps, now),
+        colette: analyzeFeedSleepLinks('colette', milkFeeds, sleeps, now),
+        isaure: analyzeFeedSleepLinks('isaure', milkFeeds, sleeps, now),
       },
       lastUpdated: now,
     });

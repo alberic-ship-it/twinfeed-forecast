@@ -33,7 +33,9 @@ export function QuickLog() {
   const [selectedBaby, setSelectedBaby] = useState<BabyName | null>(null);
   const [showBottle, setShowBottle] = useState(false);
   const [showBreast, setShowBreast] = useState(false);
+  const [showSolid, setShowSolid] = useState(false);
   const [mlValue, setMlValue] = useState(130);
+  const [portionValue, setPortionValue] = useState<'petite' | 'normale' | 'grande'>('normale');
   const [customTimeStr, setCustomTimeStr] = useState('');
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   // Ref-based guard: prevents double-submission from rapid taps
@@ -49,21 +51,33 @@ export function QuickLog() {
       setSelectedBaby(null);
       setShowBottle(false);
       setShowBreast(false);
+      setShowSolid(false);
     } else {
       setSelectedBaby(baby);
       setShowBottle(false);
       setShowBreast(false);
+      setShowSolid(false);
     }
   };
 
   const handleBottle = () => {
     setCustomTimeStr(getCurrentTimeStr());
     setShowBottle(true);
+    setShowSolid(false);
   };
 
   const handleBreast = () => {
     setCustomTimeStr(getCurrentTimeStr());
     setShowBreast(true);
+    setShowSolid(false);
+  };
+
+  const handleSolid = () => {
+    setCustomTimeStr(getCurrentTimeStr());
+    setPortionValue('normale');
+    setShowSolid(true);
+    setShowBottle(false);
+    setShowBreast(false);
   };
 
   const showSaved = (msg: string) => {
@@ -101,10 +115,27 @@ export function QuickLog() {
     showSaved(msg);
   };
 
+  const handleSubmitSolid = () => {
+    if (!selectedBaby || submittingRef.current || isFutureTime(customTimeStr)) return;
+    submittingRef.current = true;
+    const saved = logFeed(selectedBaby, 'solid', undefined, buildTimestamp(customTimeStr), portionValue);
+    const msg = saved
+      ? `${PROFILES[selectedBaby].name} · Solide enregistré (${portionValue})`
+      : `${PROFILES[selectedBaby].name} · Déjà enregistré`;
+    setSelectedBaby(null);
+    setShowSolid(false);
+    setPortionValue('normale');
+    setCustomTimeStr('');
+    submittingRef.current = false;
+    showSaved(msg);
+  };
+
   const handleCancel = () => {
     setSelectedBaby(null);
     setShowBottle(false);
     setShowBreast(false);
+    setShowSolid(false);
+    setPortionValue('normale');
     setCustomTimeStr('');
   };
 
@@ -143,19 +174,25 @@ export function QuickLog() {
       </div>
 
       {/* Feed type buttons */}
-      {selectedBaby && !showBottle && !showBreast && (
-        <div className="flex gap-2">
+      {selectedBaby && !showBottle && !showBreast && !showSolid && (
+        <div className="grid grid-cols-3 gap-2">
           <button
             onClick={handleBottle}
-            className="flex-1 py-2.5 px-3 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors min-h-[44px]"
+            className="py-2.5 px-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors min-h-[44px]"
           >
             Biberon
           </button>
           <button
             onClick={handleBreast}
-            className="flex-1 py-2.5 px-3 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors min-h-[44px]"
+            className="py-2.5 px-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors min-h-[44px]"
           >
             Tétée
+          </button>
+          <button
+            onClick={handleSolid}
+            className="py-2.5 px-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors min-h-[44px]"
+          >
+            Solide
           </button>
         </div>
       )}
@@ -263,6 +300,68 @@ export function QuickLog() {
             </button>
             <button
               onClick={handleSubmitBreast}
+              disabled={isFutureTime(customTimeStr)}
+              className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90 active:opacity-80 min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ backgroundColor: BABY_COLORS[selectedBaby] }}
+            >
+              Valider
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Solid meal panel */}
+      {showSolid && selectedBaby && (
+        <div className="space-y-3">
+          <p className="text-sm text-center text-gray-500">
+            Solide — {PROFILES[selectedBaby].name}
+          </p>
+
+          {/* Portion buttons */}
+          <div className="flex gap-2">
+            {(['petite', 'normale', 'grande'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPortionValue(p)}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-colors min-h-[44px] capitalize ${
+                  portionValue === p
+                    ? 'text-white border-transparent'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+                style={portionValue === p ? { backgroundColor: BABY_COLORS[selectedBaby] } : undefined}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+
+          {/* Time row */}
+          <div className="border-t border-b border-gray-100">
+            <div className="flex items-center justify-between px-1 py-1">
+              <span className="text-xs text-gray-400">Heure</span>
+              <input
+                type="time"
+                value={customTimeStr}
+                onChange={(e) => setCustomTimeStr(e.target.value)}
+                className="text-sm text-gray-600 bg-transparent border-0 outline-none tabular-nums"
+              />
+            </div>
+            {isFutureTime(customTimeStr) && (
+              <p className="text-[11px] text-red-500 px-1 pb-1">
+                Heure dans le futur — corrige l'heure
+              </p>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleCancel}
+              className="flex-1 py-2.5 rounded-lg text-sm text-gray-500 border border-gray-200 hover:bg-gray-50 active:bg-gray-100 transition-colors min-h-[44px]"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={handleSubmitSolid}
               disabled={isFutureTime(customTimeStr)}
               className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90 active:opacity-80 min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ backgroundColor: BABY_COLORS[selectedBaby] }}

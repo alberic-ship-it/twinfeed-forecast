@@ -188,7 +188,7 @@ export function NightModule({ analyses }: NightModuleProps) {
                   </p>
                   {session.feeds.map((f) => (
                     <p key={f.id} className="text-[11px] text-slate-500">
-                      {formatTime(f.timestamp)} · {f.volumeMl > 0 ? `${f.volumeMl} ml` : f.type === 'breast' ? 'Tétée' : 'Biberon'}
+                      {formatTime(f.timestamp)} · {f.type === 'solid' ? 'Solide' : f.volumeMl > 0 ? `${f.volumeMl} ml` : f.type === 'breast' ? 'Tétée' : 'Biberon'}
                     </p>
                   ))}
                 </div>

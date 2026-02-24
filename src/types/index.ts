@@ -55,9 +55,10 @@ export interface FeedRecord {
   id: string;
   baby: BabyName;
   timestamp: Date;
-  type: 'bottle' | 'breast';
+  type: 'bottle' | 'breast' | 'solid';
   volumeMl: number;
   durationMin?: number;
+  /** Portion pour les repas solides : 'petite' | 'normale' | 'grande' */
   notes?: string;
 }
 
@@ -77,7 +78,7 @@ export interface NightFeedEntry {
   id: string;
   baby: BabyName;
   timestamp: Date;
-  type: 'bottle' | 'breast';
+  type: 'bottle' | 'breast' | 'solid';
   volumeMl: number;
 }
 

@@ -66,7 +66,12 @@ export function EntriesScreen() {
   const babies: BabyName[] = ['colette', 'isaure'];
 
   function renderFeedRow(feed: FeedRecord) {
-    const label = feed.type === 'bottle' ? `Biberon ${feed.volumeMl} ml` : 'Tétée';
+    const label =
+      feed.type === 'bottle'
+        ? `Biberon ${feed.volumeMl} ml`
+        : feed.type === 'solid'
+          ? `Solide${feed.notes ? ` · ${feed.notes}` : ''}`
+          : 'Tétée';
     return (
       <div key={feed.id} className="flex items-center justify-between py-1.5">
         <p className="text-sm text-gray-600">
