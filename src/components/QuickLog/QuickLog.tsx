@@ -19,8 +19,8 @@ function buildTimestamp(timeStr: string): Date {
   return d;
 }
 
-/** Returns true if the entered time would be silently moved to yesterday. */
-function isBackdatedToYesterday(timeStr: string): boolean {
+/** Returns true if the entered time is in the future (more than 1 min ahead). */
+function isFutureTime(timeStr: string): boolean {
   if (!timeStr) return false;
   const [h, m] = timeStr.split(':').map(Number);
   const d = new Date();
@@ -203,9 +203,9 @@ export function QuickLog() {
                 className="text-sm text-gray-600 bg-transparent border-0 outline-none tabular-nums"
               />
             </div>
-            {isBackdatedToYesterday(customTimeStr) && (
-              <p className="text-[11px] text-amber-500 px-1 pb-1">
-                ⚠️ Heure dans le futur — sera enregistré hier à {customTimeStr}
+            {isFutureTime(customTimeStr) && (
+              <p className="text-[11px] text-red-500 px-1 pb-1">
+                Heure dans le futur — corrige l'heure
               </p>
             )}
           </div>
@@ -219,7 +219,8 @@ export function QuickLog() {
             </button>
             <button
               onClick={handleSubmitBottle}
-              className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90 active:opacity-80 min-h-[44px]"
+              disabled={isFutureTime(customTimeStr)}
+              className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90 active:opacity-80 min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ backgroundColor: BABY_COLORS[selectedBaby] }}
             >
               Valider
@@ -246,9 +247,9 @@ export function QuickLog() {
                 className="text-sm text-gray-600 bg-transparent border-0 outline-none tabular-nums"
               />
             </div>
-            {isBackdatedToYesterday(customTimeStr) && (
-              <p className="text-[11px] text-amber-500 px-1 pb-1">
-                ⚠️ Heure dans le futur — sera enregistré hier à {customTimeStr}
+            {isFutureTime(customTimeStr) && (
+              <p className="text-[11px] text-red-500 px-1 pb-1">
+                Heure dans le futur — corrige l'heure
               </p>
             )}
           </div>
@@ -262,7 +263,8 @@ export function QuickLog() {
             </button>
             <button
               onClick={handleSubmitBreast}
-              className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90 active:opacity-80 min-h-[44px]"
+              disabled={isFutureTime(customTimeStr)}
+              className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90 active:opacity-80 min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ backgroundColor: BABY_COLORS[selectedBaby] }}
             >
               Valider
