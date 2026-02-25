@@ -1,5 +1,5 @@
 import type { BabyName, FeedRecord, DetectedPattern, Prediction } from '../types';
-import { PROFILES } from './knowledge';
+import { PROFILES, getBabyAgeMonths } from './knowledge';
 
 export type RecommendationType = 'info' | 'suggestion' | 'reassurance' | 'benchmark';
 
@@ -13,17 +13,28 @@ export interface Recommendation {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Connaissances bébés 6 mois (benchmarks)
+// Benchmarks alimentation selon l'âge
 // ═══════════════════════════════════════════════════════════════════════════
 
-const AGE_6_MONTHS = {
-  feeding: {
-    typicalVolumeMl: [120, 180],
-    typicalIntervalH: [3.5, 4.5],
-    feedsPerDay: [4, 6],
-    totalDailyMl: [700, 900],
-  },
-};
+interface FeedingBenchmarks {
+  typicalVolumeMl: [number, number];
+  typicalIntervalH: [number, number];
+  feedsPerDay: [number, number];
+  totalDailyMl: [number, number];
+}
+
+function getFeedingBenchmarksForAge(ageMonths: number): FeedingBenchmarks {
+  if (ageMonths < 7) {
+    return { typicalVolumeMl: [120, 180], typicalIntervalH: [3.5, 4.5], feedsPerDay: [4, 6], totalDailyMl: [700, 900] };
+  }
+  if (ageMonths < 9) {
+    return { typicalVolumeMl: [150, 210], typicalIntervalH: [4, 5], feedsPerDay: [4, 5], totalDailyMl: [700, 900] };
+  }
+  if (ageMonths < 12) {
+    return { typicalVolumeMl: [180, 240], typicalIntervalH: [4.5, 5.5], feedsPerDay: [3, 4], totalDailyMl: [600, 800] };
+  }
+  return { typicalVolumeMl: [200, 250], typicalIntervalH: [5, 6], feedsPerDay: [3, 4], totalDailyMl: [500, 700] };
+}
 
 function avgVolumeLast24h(feeds: FeedRecord[], now: Date): number {
   const cutoff = now.getTime() - 24 * 60 * 60 * 1000;
@@ -45,6 +56,8 @@ export function generateRecommendations(
 ): Recommendation[] {
   const recs: Recommendation[] = [];
   const now = new Date();
+  const ageMonths = getBabyAgeMonths(PROFILES.colette.birthDate);
+  const benchmarks = getFeedingBenchmarksForAge(ageMonths);
 
   // ── Pattern-based recommendations ──
   for (const baby of ['colette', 'isaure'] as BabyName[]) {
@@ -112,13 +125,13 @@ export function generateRecommendations(
     // ── Volume comparison with age benchmark ──
     const avg24h = avgVolumeLast24h(babyFeeds, now);
     if (avg24h > 0) {
-      const [lowTypical, highTypical] = AGE_6_MONTHS.feeding.typicalVolumeMl;
+      const [lowTypical, highTypical] = benchmarks.typicalVolumeMl;
       if (avg24h < lowTypical * 0.8) {
         recs.push({
           id: `low-volume-benchmark-${baby}`,
           baby,
           title: `${profile.name} : volume en dessous de la moyenne`,
-          message: `Volume moyen sur 24h : ~${Math.round(avg24h)}ml par repas. La fourchette typique à 6 mois est ${lowTypical}-${highTypical}ml. Si ça persiste, observez les signes de faim.`,
+          message: `Volume moyen sur 24h : ~${Math.round(avg24h)}ml par repas. La fourchette typique à ${ageMonths} mois est ${lowTypical}-${highTypical}ml. Si ça persiste, observez les signes de faim.`,
           type: 'benchmark',
           category: 'feeding',
         });
@@ -127,7 +140,7 @@ export function generateRecommendations(
           id: `high-volume-benchmark-${baby}`,
           baby,
           title: `${profile.name} : bel appétit !`,
-          message: `Volume moyen sur 24h : ~${Math.round(avg24h)}ml par repas. C'est au-dessus de la moyenne pour 6 mois (${lowTypical}-${highTypical}ml). Possible pic de croissance ou besoins accrus.`,
+          message: `Volume moyen sur 24h : ~${Math.round(avg24h)}ml par repas. C'est au-dessus de la moyenne pour ${ageMonths} mois (${lowTypical}-${highTypical}ml). Possible pic de croissance ou besoins accrus.`,
           type: 'benchmark',
           category: 'feeding',
         });
