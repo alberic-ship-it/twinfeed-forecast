@@ -1,6 +1,6 @@
 import { differenceInMinutes, startOfDay } from 'date-fns';
 import type { SleepRecord, FeedRecord, BabyName, NightSession } from '../types';
-import { DEFAULT_SLEEP, NIGHT_SLEEP, WAKE_WINDOWS } from '../data/knowledge';
+import { DEFAULT_SLEEP, NIGHT_SLEEP, WAKE_WINDOWS, getDefaultSleepForAge, getWakeWindowsForAge } from '../data/knowledge';
 import { recencyWeight, weightedMedian, weightedAvg, percentile, filterRecentFeeds, filterRecentSleeps } from './recency';
 
 export interface SleepPrediction {
@@ -130,8 +130,10 @@ export function analyzeSleep(
   rawFeeds: FeedRecord[],
   now: Date,
   activeNight?: NightSession,
+  ageMonths?: number,
 ): SleepAnalysis {
-  const defaults = DEFAULT_SLEEP[baby];
+  const defaults = ageMonths !== undefined ? getDefaultSleepForAge(ageMonths) : DEFAULT_SLEEP[baby];
+  const wakeWindows = ageMonths !== undefined ? getWakeWindowsForAge(ageMonths) : WAKE_WINDOWS;
   const sleeps = filterRecentSleeps(rawSleeps, now);
   const feeds = filterRecentFeeds(rawFeeds, now);
 
@@ -316,7 +318,7 @@ export function analyzeSleep(
     if (sleepStatus === 'rescue_nap') {
       // Rescue nap: use reduced wake window (70% of median)
       if (lastTodayNap?.endTime) {
-        const baseInterval = positionalInterNap.get(napsToday - 1) ?? medianInterNap ?? ((WAKE_WINDOWS.optimalMin + WAKE_WINDOWS.optimalMax) / 2);
+        const baseInterval = positionalInterNap.get(napsToday - 1) ?? medianInterNap ?? ((wakeWindows.optimalMin + wakeWindows.optimalMax) / 2);
         const reducedInterval = baseInterval * 0.7;
         const fromNap = new Date(lastTodayNap.endTime.getTime() + reducedInterval * 60_000);
         if (fromNap > now) {
@@ -371,7 +373,7 @@ export function analyzeSleep(
 
         // A3: fenêtre d'éveil par défaut
         if (!predictedTime) {
-          let wakeWindowMin = (WAKE_WINDOWS.optimalMin + WAKE_WINDOWS.optimalMax) / 2;
+          let wakeWindowMin = (wakeWindows.optimalMin + wakeWindows.optimalMax) / 2;
           if (lastNapShort) {
             wakeWindowMin = wakeWindowMin * 0.7;
             hint = 'Sieste courte — réveil plus tôt que prévu';

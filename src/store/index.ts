@@ -13,7 +13,7 @@ import type {
   NightRecap,
   NightFeedEntry,
 } from '../types';
-import { PROFILES } from '../data/knowledge';
+import { PROFILES, getBabyAgeMonths } from '../data/knowledge';
 import { parseCsv } from '../data/parser';
 import { predictNextFeed } from '../engine/predictor';
 import { generateAlerts } from '../engine/alerts';
@@ -583,8 +583,9 @@ export const useStore = create<Store>((set, get) => ({
     );
     const coletteNight = nightSessions.colette && !nightSessions.colette.endTime ? nightSessions.colette : undefined;
     const isaureNight = nightSessions.isaure && !nightSessions.isaure.endTime ? nightSessions.isaure : undefined;
-    const coletteSleep = analyzeSleep('colette', sleeps, milkFeeds, now, coletteNight);
-    const isaureSleep = analyzeSleep('isaure', sleeps, milkFeeds, now, isaureNight);
+    const ageMonths = getBabyAgeMonths(PROFILES.colette.birthDate);
+    const coletteSleep = analyzeSleep('colette', sleeps, milkFeeds, now, coletteNight, ageMonths);
+    const isaureSleep = analyzeSleep('isaure', sleeps, milkFeeds, now, isaureNight, ageMonths);
 
     set({
       predictions: { colette: colettePred, isaure: isaurePred },

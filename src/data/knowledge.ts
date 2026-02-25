@@ -99,15 +99,6 @@ export const NIGHT_SLEEP = {
   minDurationMin: 360,  // 6h — only count true night sleeps; excludes short/incomplete tracking sessions
 };
 
-// Wake windows pour bébés 4-6 mois (en minutes)
-// Reference data — used by sleep.ts nap prediction fallback logic
-export const WAKE_WINDOWS = {
-  optimalMin: 90,
-  optimalMax: 150,
-  maxBeforeOvertired: 180,
-  ageLabel: '4-6 mois',
-};
-
 // Profils sommeil par défaut (utilisés quand données insuffisantes)
 export interface SleepProfile {
   nightDurationMin: number;
@@ -119,34 +110,97 @@ export interface SleepProfile {
   bestNapTimes: { startH: number; endH: number }[];
 }
 
+export interface WakeWindows {
+  optimalMin: number;
+  optimalMax: number;
+  maxBeforeOvertired: number;
+  ageLabel: string;
+}
+
+/**
+ * Retourne les fenêtres d'éveil typiques pour l'âge en mois.
+ * Remplace la constante WAKE_WINDOWS figée à 4-6 mois.
+ */
+export function getWakeWindowsForAge(ageMonths: number): WakeWindows {
+  if (ageMonths < 7)  return { optimalMin: 90,  optimalMax: 150, maxBeforeOvertired: 180, ageLabel: '4-6 mois' };
+  if (ageMonths < 9)  return { optimalMin: 150, optimalMax: 210, maxBeforeOvertired: 240, ageLabel: '7-8 mois' };
+  if (ageMonths < 12) return { optimalMin: 180, optimalMax: 240, maxBeforeOvertired: 270, ageLabel: '9-11 mois' };
+  return               { optimalMin: 240, optimalMax: 300, maxBeforeOvertired: 360, ageLabel: '12+ mois' };
+}
+
+/**
+ * Retourne le profil sommeil par défaut pour l'âge en mois.
+ * Remplace DEFAULT_SLEEP[baby] figé à 6 mois.
+ */
+export function getDefaultSleepForAge(ageMonths: number): SleepProfile {
+  if (ageMonths < 7) {
+    // 4-6 mois : 3 siestes, fenêtres courtes
+    return {
+      nightDurationMin: 570,
+      typicalBedtimeHour: 20.5,
+      typicalWakeHour: 7,
+      nightFeeds: 1,
+      napsPerDay: 3,
+      napDurationMin: 37,
+      bestNapTimes: [
+        { startH: 9, endH: 10 },
+        { startH: 12, endH: 13 },
+        { startH: 16, endH: 17 },
+      ],
+    };
+  }
+  if (ageMonths < 9) {
+    // 7-8 mois : transition 3→2 siestes, fenêtres plus longues
+    return {
+      nightDurationMin: 600,
+      typicalBedtimeHour: 20,
+      typicalWakeHour: 7,
+      nightFeeds: 1,
+      napsPerDay: 2,
+      napDurationMin: 45,
+      bestNapTimes: [
+        { startH: 9, endH: 10.5 },
+        { startH: 13, endH: 14.5 },
+      ],
+    };
+  }
+  if (ageMonths < 12) {
+    // 9-11 mois : 2 siestes bien établies
+    return {
+      nightDurationMin: 630,
+      typicalBedtimeHour: 19.5,
+      typicalWakeHour: 7,
+      nightFeeds: 0,
+      napsPerDay: 2,
+      napDurationMin: 50,
+      bestNapTimes: [
+        { startH: 9, endH: 10.5 },
+        { startH: 13.5, endH: 15 },
+      ],
+    };
+  }
+  // 12+ mois : transition 2→1 sieste
+  return {
+    nightDurationMin: 660,
+    typicalBedtimeHour: 19.5,
+    typicalWakeHour: 7,
+    nightFeeds: 0,
+    napsPerDay: 1,
+    napDurationMin: 75,
+    bestNapTimes: [
+      { startH: 12, endH: 14 },
+    ],
+  };
+}
+
+// Conservé pour compatibilité — préférer getDefaultSleepForAge() dans le code récent
 export const DEFAULT_SLEEP: Record<BabyName, SleepProfile> = {
-  colette: {
-    nightDurationMin: 570,    // ~9h30 — default for 6-month-old (historical data was unreliable)
-    typicalBedtimeHour: 21,
-    typicalWakeHour: 7,
-    nightFeeds: 1,
-    napsPerDay: 3,
-    napDurationMin: 36,
-    bestNapTimes: [
-      { startH: 9, endH: 10 },
-      { startH: 12, endH: 13 },
-      { startH: 16, endH: 17 },
-    ],
-  },
-  isaure: {
-    nightDurationMin: 570,    // ~9h30 — default for 6-month-old (historical data was unreliable)
-    typicalBedtimeHour: 21,
-    typicalWakeHour: 7,
-    nightFeeds: 1,
-    napsPerDay: 3,
-    napDurationMin: 37,
-    bestNapTimes: [
-      { startH: 9.5, endH: 10.5 },
-      { startH: 12, endH: 13 },
-      { startH: 16, endH: 17 },
-    ],
-  },
+  colette: getDefaultSleepForAge(6),
+  isaure:  getDefaultSleepForAge(6),
 };
+
+// Conservé pour compatibilité — préférer getWakeWindowsForAge() dans le code récent
+export const WAKE_WINDOWS = getWakeWindowsForAge(6);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Repères éducatifs bébé 6 mois (rotatifs par heure)
