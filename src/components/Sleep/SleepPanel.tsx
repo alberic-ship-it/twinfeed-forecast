@@ -5,7 +5,7 @@ import { Lightbulb, BookOpen, Moon, History } from 'lucide-react';
 import type { BabyName, FeedSleepAnalysis, InsightConfidence } from '../../types';
 import type { SleepAnalysis } from '../../engine/sleep';
 import { useStore } from '../../store';
-import { PROFILES, getHourlyFacts } from '../../data/knowledge';
+import { PROFILES, getHourlyFacts, getBabyAgeMonths } from '../../data/knowledge';
 
 interface SleepPanelProps {
   analyses: Record<BabyName, SleepAnalysis>;
@@ -173,7 +173,8 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
   const isaureInsight = useMemo(() => pickHourlyInsight(feedSleepInsights.isaure, hour), [feedSleepInsights.isaure, hour]);
   const hasInsights = coletteInsight || isaureInsight;
 
-  const facts = useMemo(() => getHourlyFacts(hour), [hour]);
+  const ageMonths = useMemo(() => getBabyAgeMonths(PROFILES.colette.birthDate), []);
+  const facts = useMemo(() => getHourlyFacts(hour, ageMonths), [hour, ageMonths]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 space-y-3">
@@ -342,12 +343,12 @@ export function SleepPanel({ analyses, feedSleepInsights, hour }: SleepPanelProp
         </details>
       )}
 
-      {/* Repères bébé de 6 mois — collapsed by default */}
+      {/* Repères bébé — collapsed by default */}
       <details className="border-t border-gray-100 pt-3">
         <summary className="flex items-center gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
           <BookOpen className="text-indigo-400" size={14} />
           <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">
-            Repères bébé de 6 mois
+            Repères à {ageMonths} mois
           </span>
         </summary>
 
