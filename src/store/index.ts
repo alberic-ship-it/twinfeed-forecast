@@ -61,6 +61,24 @@ interface Store {
 let seedFeedIds = new Set<string>();
 let seedSleepIds = new Set<string>();
 
+// Pending-write buffer: entries created locally but not yet confirmed by the server.
+// Survives syncFromServer() polling cycles — eliminates the race condition between
+// pushEntries() (async fire & forget) and syncFromServer() (polling every 30s).
+const pendingWriteFeeds = new Map<string, FeedRecord>();
+const pendingWriteSleeps = new Map<string, SleepRecord>();
+
+async function pushWithPending(feeds: FeedRecord[], sleeps: SleepRecord[]) {
+  for (const f of feeds) pendingWriteFeeds.set(f.id, f);
+  for (const s of sleeps) pendingWriteSleeps.set(s.id, s);
+  try {
+    await pushEntries(feeds, sleeps);
+    for (const f of feeds) pendingWriteFeeds.delete(f.id);
+    for (const s of sleeps) pendingWriteSleeps.delete(s.id);
+  } catch {
+    // Leave in pending — syncFromServer() will retry on next cycle
+  }
+}
+
 // Dirty-check: skip refresh if data hasn't changed and last refresh was recent
 let _lastRefreshKey = '';
 let _lastRefreshTime = 0;
@@ -250,7 +268,7 @@ export const useStore = create<Store>((set, get) => ({
     // Push only non-seed entries to server
     const nonSeedFeeds = allFeeds.filter((f) => !seedFeedIds.has(f.id));
     const nonSeedSleeps = allSleeps.filter((s) => !seedSleepIds.has(s.id));
-    pushEntries(nonSeedFeeds, nonSeedSleeps).catch(() => {});
+    pushWithPending(nonSeedFeeds, nonSeedSleeps);
   },
 
   logFeed: (baby, type, ml, timestamp, notes) => {
@@ -304,8 +322,8 @@ export const useStore = create<Store>((set, get) => ({
     saveEntriesCache(allFeeds, get().sleeps);
     get().refreshPredictions(); // _refreshInsights est déjà appelé en interne
 
-    // Push to server
-    pushEntries([feed], []).catch(() => {});
+    // Push to server (via pending buffer to survive polling race conditions)
+    pushWithPending([feed], []);
     return true;
   },
 
@@ -326,8 +344,8 @@ export const useStore = create<Store>((set, get) => ({
     saveEntriesCache(get().feeds, allSleeps);
     get().refreshPredictions();
 
-    // Push to server
-    pushEntries([], [sleep]).catch(() => {});
+    // Push to server (via pending buffer to survive polling race conditions)
+    pushWithPending([], [sleep]);
   },
 
   deleteSleep: (id) => {
@@ -340,6 +358,8 @@ export const useStore = create<Store>((set, get) => ({
     _lastRefreshKey = '';
     get().refreshPredictions();
 
+    // Remove from pending buffer (in case it was never confirmed)
+    pendingWriteSleeps.delete(id);
     // Delete from server too
     deleteServerEntries({ deleteSleepIds: [id] }).catch(() => {});
   },
@@ -353,6 +373,8 @@ export const useStore = create<Store>((set, get) => ({
     _lastRefreshKey = '';
     get().refreshPredictions();
 
+    // Remove from pending buffer (in case it was never confirmed)
+    pendingWriteFeeds.delete(id);
     deleteServerEntries({ deleteFeedIds: [id] }).catch(() => {});
   },
 
@@ -431,7 +453,7 @@ export const useStore = create<Store>((set, get) => ({
     saveNightRecapsToStorage(newRecaps);
     saveEntriesCache(get().feeds, allSleeps);
     pushNightSessions(updatedSessions, newRecaps).catch(() => {});
-    pushEntries([], [nightSleep]).catch(() => {});
+    pushWithPending([], [nightSleep]);
 
     // Force refresh predictions with new sleep data
     _lastRefreshKey = '';
@@ -494,7 +516,7 @@ export const useStore = create<Store>((set, get) => ({
     saveNightRecapsToStorage(newRecaps);
     saveEntriesCache(get().feeds, allSleeps);
     pushNightSessions(nightSessions, newRecaps).catch(() => {});
-    pushEntries([], [nightSleep]).catch(() => {});
+    pushWithPending([], [nightSleep]);
     _lastRefreshKey = '';
     get().refreshPredictions();
   },
@@ -832,11 +854,31 @@ export async function syncFromServer() {
 
     const { feeds, sleeps, nightSessions, nightRecaps } = useStore.getState();
 
+    // Retirer du pending les entrées maintenant confirmées par le serveur
+    for (const f of shared.feeds) pendingWriteFeeds.delete(f.id);
+    for (const s of shared.sleeps) pendingWriteSleeps.delete(s.id);
+
+    // Entrées locales pas encore confirmées (push en cours ou push raté réseau)
+    const pendingFeedsList = [...pendingWriteFeeds.values()];
+    const pendingSleepsList = [...pendingWriteSleeps.values()];
+
+    // Rattrapage push pour les entrées pendantes non encore sur le serveur
+    if (pendingFeedsList.length > 0 || pendingSleepsList.length > 0) {
+      pushWithPending(pendingFeedsList, pendingSleepsList);
+    }
+
     // Serveur fait autorité pour les données utilisateur — préserver uniquement les seeds locaux.
     // Cela garantit que les suppressions faites sur un appareil se propagent à l'autre.
-    // (Avant : mergeFeeds(feeds, shared) → additif uniquement, jamais de suppression)
-    const newFeeds = mergeFeeds(feeds.filter(f => seedFeedIds.has(f.id)), shared.feeds);
-    const newSleeps = mergeSleeps(sleeps.filter(s => seedSleepIds.has(s.id)), shared.sleeps);
+    // Les entrées pending (non encore confirmées) sont préservées pour éviter la race condition
+    // entre pushEntries() (async) et syncFromServer() (polling 30s).
+    const newFeeds = mergeFeeds(
+      mergeFeeds(feeds.filter(f => seedFeedIds.has(f.id)), shared.feeds),
+      pendingFeedsList,
+    );
+    const newSleeps = mergeSleeps(
+      mergeSleeps(sleeps.filter(s => seedSleepIds.has(s.id)), shared.sleeps),
+      pendingSleepsList,
+    );
 
     // Merge night sessions: local prend la priorité sur serveur
     const mergedNights: Record<BabyName, NightSession | null> = { colette: null, isaure: null };
