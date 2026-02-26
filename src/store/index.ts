@@ -68,6 +68,11 @@ let seedSleepIds = new Set<string>();
 const pendingWriteFeeds = new Map<string, FeedRecord>();
 const pendingWriteSleeps = new Map<string, SleepRecord>();
 
+// Pending-delete buffer: entries deleted locally but not yet confirmed deleted on server.
+// Prevents syncFromServer() from re-introducing deleted entries when deleteServerEntries() failed.
+const pendingDeleteFeedIds = new Set<string>();
+const pendingDeleteSleepIds = new Set<string>();
+
 async function pushWithPending(feeds: FeedRecord[], sleeps: SleepRecord[]) {
   for (const f of feeds) pendingWriteFeeds.set(f.id, f);
   for (const s of sleeps) pendingWriteSleeps.set(s.id, s);
@@ -362,8 +367,11 @@ export const useStore = create<Store>((set, get) => ({
 
     // Remove from pending buffer (in case it was never confirmed)
     pendingWriteSleeps.delete(id);
-    // Delete from server too
-    deleteServerEntries({ deleteSleepIds: [id] }).catch(() => {});
+    // Track pending deletion — filters server data during sync and retries if request fails
+    pendingDeleteSleepIds.add(id);
+    deleteServerEntries({ deleteSleepIds: [id] })
+      .then(() => pendingDeleteSleepIds.delete(id))
+      .catch(() => {});
   },
 
   deleteFeed: (id) => {
@@ -377,7 +385,11 @@ export const useStore = create<Store>((set, get) => ({
 
     // Remove from pending buffer (in case it was never confirmed)
     pendingWriteFeeds.delete(id);
-    deleteServerEntries({ deleteFeedIds: [id] }).catch(() => {});
+    // Track pending deletion — filters server data during sync and retries if request fails
+    pendingDeleteFeedIds.add(id);
+    deleteServerEntries({ deleteFeedIds: [id] })
+      .then(() => pendingDeleteFeedIds.delete(id))
+      .catch(() => {});
   },
 
   startNight: (baby) => {
@@ -909,6 +921,19 @@ export async function syncFromServer() {
     for (const f of shared.feeds) pendingWriteFeeds.delete(f.id);
     for (const s of shared.sleeps) pendingWriteSleeps.delete(s.id);
 
+    // Retry pending deletions — in case deleteServerEntries() failed previously
+    if (pendingDeleteFeedIds.size > 0 || pendingDeleteSleepIds.size > 0) {
+      deleteServerEntries({
+        ...(pendingDeleteFeedIds.size > 0 && { deleteFeedIds: [...pendingDeleteFeedIds] }),
+        ...(pendingDeleteSleepIds.size > 0 && { deleteSleepIds: [...pendingDeleteSleepIds] }),
+      })
+        .then(() => {
+          pendingDeleteFeedIds.clear();
+          pendingDeleteSleepIds.clear();
+        })
+        .catch(() => {});
+    }
+
     // Entrées locales pas encore confirmées (push en cours ou push raté réseau)
     const pendingFeedsList = [...pendingWriteFeeds.values()];
     const pendingSleepsList = [...pendingWriteSleeps.values()];
@@ -922,12 +947,13 @@ export async function syncFromServer() {
     // Cela garantit que les suppressions faites sur un appareil se propagent à l'autre.
     // Les entrées pending (non encore confirmées) sont préservées pour éviter la race condition
     // entre pushEntries() (async) et syncFromServer() (polling 30s).
+    // Les entrées pending delete sont filtrées pour éviter qu'une suppression échouée ne revienne.
     const newFeeds = mergeFeeds(
-      mergeFeeds(feeds.filter(f => seedFeedIds.has(f.id)), shared.feeds),
+      mergeFeeds(feeds.filter(f => seedFeedIds.has(f.id)), shared.feeds.filter(f => !pendingDeleteFeedIds.has(f.id))),
       pendingFeedsList,
     );
     const newSleeps = mergeSleeps(
-      mergeSleeps(sleeps.filter(s => seedSleepIds.has(s.id)), shared.sleeps),
+      mergeSleeps(sleeps.filter(s => seedSleepIds.has(s.id)), shared.sleeps.filter(s => !pendingDeleteSleepIds.has(s.id))),
       pendingSleepsList,
     );
 
