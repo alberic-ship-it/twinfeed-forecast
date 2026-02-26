@@ -298,8 +298,9 @@ export const useStore = create<Store>((set, get) => ({
     );
 
     // If night is active for this baby, add feed to the night session
+    // Only if the feed's timestamp is within the active night (>= night start)
     const activeNight = nightSessions[baby];
-    if (activeNight && !activeNight.endTime) {
+    if (activeNight && !activeNight.endTime && ts >= activeNight.startTime) {
       const nightFeed: NightFeedEntry = {
         id: feed.id,
         baby,
