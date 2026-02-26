@@ -50,6 +50,7 @@ interface Store {
   cancelNight: (baby: BabyName) => void;
   logPastNight: (baby: BabyName, startTime: Date, endTime: Date) => void;
   updateNightStartTime: (baby: BabyName, newStartTime: Date) => void;
+  updateNightRecapStartTime: (sessionId: string, newStartTime: Date) => void;
   dismissNightRecap: (baby: BabyName) => void;
   deleteNightRecap: (sessionId: string) => void;
   refreshPredictions: () => void;
@@ -518,6 +519,54 @@ export const useStore = create<Store>((set, get) => ({
     saveEntriesCache(get().feeds, allSleeps);
     pushNightSessions(nightSessions, newRecaps).catch(() => {});
     pushWithPending([], [nightSleep]);
+    _lastRefreshKey = '';
+    get().refreshPredictions();
+  },
+
+  updateNightRecapStartTime: (sessionId, newStartTime) => {
+    const { nightRecaps, sleeps } = get();
+    const recapIndex = nightRecaps.findIndex((r) => r.session.id === sessionId);
+    if (recapIndex === -1) return;
+
+    const recap = nightRecaps[recapIndex];
+    const { session } = recap;
+    if (!session.endTime) return;
+
+    const endTime = session.endTime;
+    const totalDurationMin = Math.round((endTime.getTime() - newStartTime.getTime()) / 60_000);
+
+    // Recalculate stretch stats with new startTime
+    const feeds = [...session.feeds].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    const timestamps = [newStartTime, ...feeds.map((f) => f.timestamp), endTime];
+    let longestStretchMin = 0;
+    const gaps: number[] = [];
+    for (let i = 1; i < timestamps.length; i++) {
+      const gap = Math.round((timestamps[i].getTime() - timestamps[i - 1].getTime()) / 60_000);
+      gaps.push(gap);
+      if (gap > longestStretchMin) longestStretchMin = gap;
+    }
+    const avgInterFeedMin = gaps.length > 0 ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : 0;
+
+    const updatedRecap: NightRecap = {
+      ...recap,
+      session: { ...session, startTime: newStartTime },
+      totalDurationMin,
+      longestStretchMin,
+      avgInterFeedMin,
+    };
+    const newRecaps = nightRecaps.map((r, i) => (i === recapIndex ? updatedRecap : r));
+
+    // Update the corresponding SleepRecord (matched by baby + original startTime)
+    const updatedSleeps = sleeps.map((s) =>
+      s.baby === recap.baby && s.startTime.getTime() === session.startTime.getTime()
+        ? { ...s, startTime: newStartTime, durationMin: totalDurationMin }
+        : s
+    );
+
+    set({ nightRecaps: newRecaps, sleeps: updatedSleeps });
+    saveNightRecapsToStorage(newRecaps);
+    saveEntriesCache(get().feeds, updatedSleeps);
+    pushNightSessions(get().nightSessions, newRecaps).catch(() => {});
     _lastRefreshKey = '';
     get().refreshPredictions();
   },

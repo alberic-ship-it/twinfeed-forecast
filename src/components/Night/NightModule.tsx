@@ -126,9 +126,20 @@ export function NightModule({ analyses }: NightModuleProps) {
 
           return (
             <div key={baby} className="space-y-2.5">
-              <span className="text-sm font-medium text-slate-200">
-                {profile.name}
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-200">
+                  {profile.name}
+                </span>
+                {cancelConfirmBaby !== baby && (
+                  <button
+                    onClick={() => setCancelConfirmBaby(baby)}
+                    className="p-1 text-slate-600 hover:text-red-400 transition-colors"
+                    title="Supprimer cette session"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
 
               {/* Live timer */}
               <div>
@@ -319,13 +330,6 @@ export function NightModule({ analyses }: NightModuleProps) {
                     >
                       <Square size={12} />
                       Terminer
-                    </button>
-                    <button
-                      onClick={() => setCancelConfirmBaby(baby)}
-                      className="p-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-500 hover:text-red-400 rounded-lg transition-colors"
-                      title="Supprimer cette session"
-                    >
-                      <Trash2 size={13} />
                     </button>
                   </div>
                 )
