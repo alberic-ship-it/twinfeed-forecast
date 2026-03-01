@@ -31,7 +31,8 @@ export type PatternId =
   | 'OVERTIRED'
   | 'VOLUME_DECLINE'
   | 'SUSTAINED_APPETITE'
-  | 'SHORT_NIGHT';
+  | 'SHORT_NIGHT'
+  | 'RECENT_SOLID';
 
 export type Screen = 'import' | 'dashboard' | 'entries';
 

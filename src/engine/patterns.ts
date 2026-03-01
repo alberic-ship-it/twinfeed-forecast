@@ -8,6 +8,7 @@ export function detectPatterns(
   rawFeeds: FeedRecord[],
   rawSleeps: SleepRecord[],
   now: Date,
+  allRawFeeds?: FeedRecord[],
 ): DetectedPattern[] {
   const allFeeds = filterRecentFeeds(rawFeeds, now);
   const allSleeps = filterRecentSleeps(rawSleeps, now);
@@ -334,6 +335,32 @@ export function detectPatterns(
       timingModifier: 0.88,
       volumeModifier: 1.05,
     });
+  }
+
+  // --- RECENT SOLID ---
+  // If a solid was logged in the last 90 min, slightly extend the next milk
+  // feed interval and reduce the predicted volume. Portion size modulates the effect.
+  if (allRawFeeds) {
+    const recentSolid = allRawFeeds
+      .filter((f) => f.baby === baby && f.type === 'solid')
+      .filter((f) => differenceInMinutes(now, f.timestamp) <= 90 && differenceInMinutes(now, f.timestamp) >= 0)
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
+
+    if (recentSolid) {
+      const portion = recentSolid.notes; // 'petite' | 'normale' | 'grande'
+      const timingModifier = portion === 'grande' ? 1.12 : portion === 'petite' ? 1.05 : 1.08;
+      const volumeModifier = portion === 'grande' ? 0.90 : portion === 'petite' ? 0.96 : 0.93;
+      const portionLabel = portion === 'grande' ? 'grande' : portion === 'petite' ? 'petite' : 'normale';
+      patterns.push({
+        id: 'RECENT_SOLID',
+        label: 'Solide récent',
+        description: `Repas solide (portion ${portionLabel}) il y a ${differenceInMinutes(now, recentSolid.timestamp)} min — prochain biberon probablement plus tardif et moins volumineux`,
+        baby,
+        detectedAt: now,
+        timingModifier,
+        volumeModifier,
+      });
+    }
   }
 
   return patterns;

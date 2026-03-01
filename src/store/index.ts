@@ -636,8 +636,8 @@ export const useStore = create<Store>((set, get) => ({
     const milkFeeds = feeds.filter((f) => f.type !== 'solid');
 
     // Patterns calculés en premier pour éviter un double appel dans predictNextFeed
-    const colettePatterns = detectPatterns('colette', milkFeeds, sleeps, now);
-    const isaurePatterns = detectPatterns('isaure', milkFeeds, sleeps, now);
+    const colettePatterns = detectPatterns('colette', milkFeeds, sleeps, now, feeds);
+    const isaurePatterns = detectPatterns('isaure', milkFeeds, sleeps, now, feeds);
     const colettePred = predictNextFeed('colette', milkFeeds, sleeps, now, colettePatterns);
     const isaurePred = predictNextFeed('isaure', milkFeeds, sleeps, now, isaurePatterns);
     const freshAlerts = generateAlerts(milkFeeds).map((a) =>
