@@ -3,6 +3,7 @@ import type {
   BabyName,
   FeedRecord,
   SleepRecord,
+  NightRecap,
   FeedSleepAnalysis,
   FeedSleepInsight,
   InsightConfidence,
@@ -385,6 +386,7 @@ function computeHourlyContextInsights(
   bottles: FeedRecord[],
   naps: SleepRecord[],
   nightSleeps: SleepRecord[],
+  babyRecaps: NightRecap[],
   hour: number,
   now: Date,
 ): FeedSleepInsight[] {
@@ -590,15 +592,10 @@ function computeHourlyContextInsights(
       const stretchH = Math.floor(avgStretch / 60);
       const stretchM = avgStretch % 60;
 
-      // Count night wakings per night
-      const nightsByDay = new Map<string, number>();
-      for (const ns of nightSleeps) {
-        const dayKey = startOfDay(ns.startTime).toISOString();
-        nightsByDay.set(dayKey, (nightsByDay.get(dayKey) ?? 0) + 1);
-      }
-      const wakingCounts = [...nightsByDay.values()];
+      // Count night wakings from actual NightRecap data (feedCount = nb réveils réels)
+      const wakingCounts = babyRecaps.map((r) => r.feedCount);
       const avgWakings = wakingCounts.length > 0
-        ? Math.round(avg(wakingCounts.map((c) => Math.max(0, c - 1))) * 10) / 10
+        ? Math.round(avg(wakingCounts) * 10) / 10
         : null;
 
       let obs = `Le 1er stretch de nuit de ${name} dure en moyenne ${stretchH}h${stretchM > 0 ? stretchM.toString().padStart(2, '0') : ''}`;
@@ -1114,6 +1111,7 @@ export function analyzeFeedSleepLinks(
   rawFeeds: FeedRecord[],
   rawSleeps: SleepRecord[],
   now: Date,
+  nightRecaps: NightRecap[] = [],
 ): FeedSleepAnalysis {
   const allFeeds = filterRecentFeeds(rawFeeds, now);
   const allSleeps = filterRecentSleeps(rawSleeps, now);
@@ -1121,6 +1119,7 @@ export function analyzeFeedSleepLinks(
   const sleeps = allSleeps
     .filter((s) => s.baby === baby)
     .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+  const babyRecaps = nightRecaps.filter((r) => r.baby === baby);
 
   // Bottles only (reliable volume)
   const bottles = feeds.filter((f) => f.type === 'bottle' && f.volumeMl > 0);
@@ -1154,7 +1153,7 @@ export function analyzeFeedSleepLinks(
     computeScheduleRegularity(baby, bottles, sleeps, now),
   ];
 
-  const hourlyInsights = computeHourlyContextInsights(baby, bottles, naps, nightSleeps, hour, now);
+  const hourlyInsights = computeHourlyContextInsights(baby, bottles, naps, nightSleeps, babyRecaps, hour, now);
 
   return {
     baby,

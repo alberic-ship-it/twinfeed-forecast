@@ -614,7 +614,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   refreshPredictions: () => {
-    const { feeds, sleeps, nightSessions } = get();
+    const { feeds, sleeps, nightSessions, nightRecaps } = get();
     const now = new Date();
 
     // Skip if data hasn't changed and last refresh was recent.
@@ -655,8 +655,8 @@ export const useStore = create<Store>((set, get) => ({
       patterns: [...colettePatterns, ...isaurePatterns],
       sleepAnalyses: { colette: coletteSleep, isaure: isaureSleep },
       feedSleepInsights: {
-        colette: analyzeFeedSleepLinks('colette', milkFeeds, sleeps, now),
-        isaure: analyzeFeedSleepLinks('isaure', milkFeeds, sleeps, now),
+        colette: analyzeFeedSleepLinks('colette', milkFeeds, sleeps, now, nightRecaps),
+        isaure: analyzeFeedSleepLinks('isaure', milkFeeds, sleeps, now, nightRecaps),
       },
       lastUpdated: now,
     });
