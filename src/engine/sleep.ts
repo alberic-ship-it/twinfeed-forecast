@@ -122,6 +122,43 @@ function computePositionalInterNap(
   return result;
 }
 
+/**
+ * Compute the weighted median gap (minutes) between the last night feed
+ * and morning wake-up, from historical night sleep records + feed data.
+ * Returns null if fewer than 3 data points.
+ */
+function computeMedianLastFeedToWakeGap(
+  babySleeps: SleepRecord[],
+  babyFeeds: FeedRecord[],
+  now: Date,
+): number | null {
+  const nightSleeps = babySleeps.filter(
+    (s) => s.startTime.getHours() >= NIGHT_SLEEP.minStartHour
+      && s.durationMin > NIGHT_SLEEP.minDurationMin
+      && s.endTime,
+  );
+
+  const gaps: number[] = [];
+  const weights: number[] = [];
+
+  for (const night of nightSleeps) {
+    if (!night.endTime) continue;
+    const nightFeeds = babyFeeds.filter(
+      (f) => f.timestamp >= night.startTime && f.timestamp <= night.endTime!,
+    );
+    if (nightFeeds.length === 0) continue;
+    const lastFeed = nightFeeds[nightFeeds.length - 1];
+    const gapMin = differenceInMinutes(night.endTime, lastFeed.timestamp);
+    if (gapMin > 0 && gapMin < 300) {
+      gaps.push(gapMin);
+      weights.push(recencyWeight(night.startTime, now));
+    }
+  }
+
+  if (gaps.length < 3) return null;
+  return Math.round(weightedMedian(gaps, weights));
+}
+
 // ── Main analysis ──
 
 export function analyzeSleep(
@@ -161,7 +198,23 @@ export function analyzeSleep(
     const nightFeeds = activeNight.feeds;
     const lastFeed = nightFeeds.length > 0 ? nightFeeds[nightFeeds.length - 1] : null;
     const lastFeedAgoMin = lastFeed ? Math.round((now.getTime() - lastFeed.timestamp.getTime()) / 60_000) : null;
-    const expectedWakeTime = new Date(activeNight.startTime.getTime() + medianNightDuration * 60_000);
+
+    // Réveil projeté : si des repas ont eu lieu, ancrer sur le dernier repas + gap historique.
+    // Sinon, fallback sur nightStart + médiane durée de nuit.
+    // Cap minimum : nightStart + minDurationMin (évite les réveils irréalistes trop tôt).
+    let expectedWakeTime: Date;
+    const minWakeTime = new Date(activeNight.startTime.getTime() + NIGHT_SLEEP.minDurationMin * 60_000);
+    if (lastFeed) {
+      const medianLastFeedToWake = computeMedianLastFeedToWakeGap(babySleeps, babyFeeds, now);
+      if (medianLastFeedToWake !== null) {
+        const candidate = new Date(lastFeed.timestamp.getTime() + medianLastFeedToWake * 60_000);
+        expectedWakeTime = candidate > minWakeTime ? candidate : minWakeTime;
+      } else {
+        expectedWakeTime = new Date(activeNight.startTime.getTime() + medianNightDuration * 60_000);
+      }
+    } else {
+      expectedWakeTime = new Date(activeNight.startTime.getTime() + medianNightDuration * 60_000);
+    }
 
     // Still compute today's naps for context (même fenêtre étendue)
     const todayStart = new Date(now);
