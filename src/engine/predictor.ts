@@ -9,7 +9,7 @@ import type {
   Explanation,
   DetectedPattern,
 } from '../types';
-import { PROFILES, INTERVAL_FILTER, getSlotId } from '../data/knowledge';
+import { PROFILES, INTERVAL_FILTER, NIGHT_SLEEP, getSlotId } from '../data/knowledge';
 import { detectPatterns } from './patterns';
 import { recencyWeight, weightedMedian, filterRecentFeeds, filterRecentSleeps } from './recency';
 
@@ -90,6 +90,47 @@ function findRecentNapWakeUp(
 function getSlotForHour(hour: number, baby: BabyName) {
   const profile = PROFILES[baby];
   return profile.slots.find((s) => s.hours.includes(hour)) ?? profile.slots[0];
+}
+
+/**
+ * Compute the weighted median duration (minutes) from night start to first night feed,
+ * from historical data. Used as data-driven threshold for NIGHT_REBASE.
+ * Returns null if fewer than 3 data points.
+ */
+function computeMedianFirstStretch(
+  baby: BabyName,
+  allSleeps: SleepRecord[],
+  allFeeds: FeedRecord[],
+  now: Date,
+): number | null {
+  const nightSleeps = allSleeps.filter(
+    (s) => s.baby === baby
+      && s.startTime.getHours() >= NIGHT_SLEEP.minStartHour
+      && s.durationMin > NIGHT_SLEEP.minDurationMin
+      && s.endTime,
+  );
+  const babyFeeds = allFeeds
+    .filter((f) => f.baby === baby)
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+  const stretches: number[] = [];
+  const weights: number[] = [];
+
+  for (const night of nightSleeps) {
+    if (!night.endTime) continue;
+    const firstNightFeed = babyFeeds.find(
+      (f) => f.timestamp >= night.startTime && f.timestamp <= night.endTime!,
+    );
+    if (!firstNightFeed) continue;
+    const stretchMin = differenceInMinutes(firstNightFeed.timestamp, night.startTime);
+    if (stretchMin > 30 && stretchMin < 480) {
+      stretches.push(stretchMin);
+      weights.push(recencyWeight(night.startTime, now));
+    }
+  }
+
+  if (stretches.length < 3) return null;
+  return Math.round(weightedMedian(stretches, weights));
 }
 
 /** Minimum interval (minutes) to prevent infinite while-loops on bad data. */
@@ -240,18 +281,19 @@ export function predictNextFeed(
   }
 
   // --- NIGHT REBASE ---
-  // Si le repas prédit tombe dans les 90 min après le coucher (projeté ou démarré manuellement),
-  // le bébé vient de s'endormir : rebaser depuis le coucher avec l'intervalle de nuit.
+  // Si le repas prédit tombe dans la fenêtre du premier stretch de nuit (coucher → premier réveil),
+  // le bébé est en train de dormir : rebaser à la fin du premier stretch.
+  // Le seuil est data-driven (médiane historique) avec fallback à 90 min.
   if (bedtimeDate) {
     const bedtimeMs = bedtimeDate.getTime();
     const predictedMs = predictedTime.getTime();
-    if (predictedMs > bedtimeMs && predictedMs < bedtimeMs + 90 * 60_000) {
-      const nightIntervalH = cachedInterval('night');
-      predictedTime = addMinutes(bedtimeDate, Math.round(nightIntervalH * 60));
+    const firstStretchMin = computeMedianFirstStretch(baby, allSleeps, allFeeds, now) ?? 90;
+    if (predictedMs > bedtimeMs && predictedMs < bedtimeMs + firstStretchMin * 60_000) {
+      predictedTime = addMinutes(bedtimeDate, firstStretchMin);
       explanations.push({
         ruleId: 'NIGHT_REBASE',
         text: 'Repas rebasé depuis le coucher — premier réveil de nuit estimé',
-        impact: `~${nightIntervalH.toFixed(1)}h post-coucher`,
+        impact: `~${Math.round(firstStretchMin / 60 * 10) / 10}h post-coucher`,
       });
     }
   }
