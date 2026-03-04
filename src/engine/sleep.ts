@@ -199,21 +199,23 @@ export function analyzeSleep(
     const lastFeed = nightFeeds.length > 0 ? nightFeeds[nightFeeds.length - 1] : null;
     const lastFeedAgoMin = lastFeed ? Math.round((now.getTime() - lastFeed.timestamp.getTime()) / 60_000) : null;
 
-    // Réveil projeté : si des repas ont eu lieu, ancrer sur le dernier repas + gap historique.
-    // Sinon, fallback sur nightStart + médiane durée de nuit.
-    // Cap minimum : nightStart + minDurationMin (évite les réveils irréalistes trop tôt).
+    // Réveil projeté : deux estimations, on prend la plus tardive.
+    // - durationBased : nightStart + médiane durée de nuit (stable)
+    // - feedBased : dernier repas + gap historique dernier-repas→réveil (adaptatif)
+    // Prendre le max évite de sous-estimer le réveil quand le dernier repas enregistré
+    // n'est pas encore le dernier de la nuit (ex : repas à 3h alors qu'il y en aura un à 5h).
+    const durationBased = new Date(activeNight.startTime.getTime() + medianNightDuration * 60_000);
     let expectedWakeTime: Date;
-    const minWakeTime = new Date(activeNight.startTime.getTime() + NIGHT_SLEEP.minDurationMin * 60_000);
     if (lastFeed) {
       const medianLastFeedToWake = computeMedianLastFeedToWakeGap(babySleeps, babyFeeds, now);
       if (medianLastFeedToWake !== null) {
-        const candidate = new Date(lastFeed.timestamp.getTime() + medianLastFeedToWake * 60_000);
-        expectedWakeTime = candidate > minWakeTime ? candidate : minWakeTime;
+        const feedBased = new Date(lastFeed.timestamp.getTime() + medianLastFeedToWake * 60_000);
+        expectedWakeTime = feedBased > durationBased ? feedBased : durationBased;
       } else {
-        expectedWakeTime = new Date(activeNight.startTime.getTime() + medianNightDuration * 60_000);
+        expectedWakeTime = durationBased;
       }
     } else {
-      expectedWakeTime = new Date(activeNight.startTime.getTime() + medianNightDuration * 60_000);
+      expectedWakeTime = durationBased;
     }
 
     // Still compute today's naps for context (même fenêtre étendue)
