@@ -40,6 +40,7 @@ function buildTimestamp(timeStr: string): Date {
 
 export function NightModule({ analyses }: NightModuleProps) {
   const nightSessions = useStore((s) => s.nightSessions);
+  const predictions = useStore((s) => s.predictions);
   const endNight = useStore((s) => s.endNight);
   const cancelNight = useStore((s) => s.cancelNight);
   const logFeed = useStore((s) => s.logFeed);
@@ -119,6 +120,10 @@ export function NightModule({ analyses }: NightModuleProps) {
           const lastFeedAgoMin = lastFeed
             ? Math.round((now.getTime() - lastFeed.timestamp.getTime()) / 60_000)
             : null;
+
+          const nextFeedTime = predictions[baby]?.timing.predictedTime;
+          const isIntermediateWake = nextFeedTime && progress?.expectedWakeTime
+            && nextFeedTime < progress.expectedWakeTime;
 
           const isFormActive = activeForm?.baby === baby;
           const showFeedForm = isFormActive && activeForm?.kind === 'feed';
@@ -214,10 +219,17 @@ export function NightModule({ analyses }: NightModuleProps) {
                 </p>
               )}
 
-              {/* Expected wake time */}
+              {/* Prochain réveil intermédiaire */}
+              {isIntermediateWake && nextFeedTime && (
+                <p className="text-[11px] text-amber-300/80">
+                  Prochain réveil ~{formatTime(nextFeedTime)}
+                </p>
+              )}
+
+              {/* Réveil matinal estimé */}
               {progress?.expectedWakeTime && (
                 <p className="text-[11px] text-indigo-300">
-                  Réveil estimé ~{formatTime(progress.expectedWakeTime)}
+                  Réveil matin ~{formatTime(progress.expectedWakeTime)}
                 </p>
               )}
 
