@@ -491,11 +491,12 @@ export function analyzeSleep(
     }
   }
 
-  // Default 90 min (cohérent avec les fenêtres d'éveil à 4–6 mois)
+  // Fallback : milieu de la fenêtre d'éveil optimale pour l'âge
+  const wakeWindowFallback = Math.round((wakeWindows.optimalMin + wakeWindows.optimalMax) / 2);
   const medianWakeWindowBeforeNight =
     wakeWindowsBeforeNight.length >= 3
       ? Math.round(weightedMedian(wakeWindowsBeforeNight, wakeWindowWeights))
-      : 90;
+      : wakeWindowFallback;
 
   let bedtimeDate = new Date(now);
   bedtimeDate.setHours(
