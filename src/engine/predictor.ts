@@ -299,12 +299,12 @@ export function predictNextFeed(
   }
 
   // --- MORNING REBASE ---
-  // Si le repas prédit tombe dans les 90 min avant le réveil projeté (nuit active),
-  // le bébé est en fin de nuit : rebaser depuis le réveil avec la latence post-nuit.
+  // Si le repas prédit est dans une fenêtre de ±90 min autour du réveil projeté,
+  // c'est un repas post-réveil : rebaser depuis le réveil + latence habituelle.
   if (expectedWakeTime) {
     const wakeMs = expectedWakeTime.getTime();
     const predictedMs = predictedTime.getTime();
-    if (predictedMs < wakeMs && predictedMs > wakeMs - 90 * 60_000) {
+    if (Math.abs(predictedMs - wakeMs) < 90 * 60_000) {
       const postWakeLatency = computePostNapFeedLatency(baby, allFeeds, rawSleeps, now) ?? 30;
       predictedTime = addMinutes(expectedWakeTime, postWakeLatency);
       explanations.push({
