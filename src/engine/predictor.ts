@@ -304,7 +304,7 @@ export function predictNextFeed(
   if (expectedWakeTime) {
     const wakeMs = expectedWakeTime.getTime();
     const predictedMs = predictedTime.getTime();
-    if (Math.abs(predictedMs - wakeMs) < 90 * 60_000) {
+    if (predictedMs >= wakeMs && predictedMs < wakeMs + 90 * 60_000) {
       const postWakeLatency = computePostNapFeedLatency(baby, allFeeds, rawSleeps, now) ?? 30;
       predictedTime = addMinutes(expectedWakeTime, postWakeLatency);
       explanations.push({
