@@ -132,11 +132,7 @@ function computeMedianLastFeedToWakeGap(
   babyFeeds: FeedRecord[],
   now: Date,
 ): number | null {
-  const nightSleeps = babySleeps.filter(
-    (s) => s.startTime.getHours() >= NIGHT_SLEEP.minStartHour
-      && s.durationMin > NIGHT_SLEEP.minDurationMin
-      && s.endTime,
-  );
+  const nightSleeps = filterNightSleeps(babySleeps);
 
   const gaps: number[] = [];
   const weights: number[] = [];
@@ -157,6 +153,15 @@ function computeMedianLastFeedToWakeGap(
 
   if (gaps.length < 3) return null;
   return Math.round(weightedMedian(gaps, weights));
+}
+
+/** Filter sleeps to historical night sleeps only (completed, ≥ minDuration, started at night hour). */
+export function filterNightSleeps(sleeps: SleepRecord[]): SleepRecord[] {
+  return sleeps.filter(
+    (s) => s.startTime.getHours() >= NIGHT_SLEEP.minStartHour
+      && s.durationMin > NIGHT_SLEEP.minDurationMin
+      && s.endTime,
+  );
 }
 
 // ── Main analysis ──
@@ -185,9 +190,7 @@ export function analyzeSleep(
   // ── Night active mode: early return with progress ──
   if (activeNight && !activeNight.endTime) {
     // Compute median night duration from historical data
-    const histNightSleeps = babySleeps.filter(
-      (s) => s.startTime.getHours() >= NIGHT_SLEEP.minStartHour && s.durationMin > NIGHT_SLEEP.minDurationMin,
-    );
+    const histNightSleeps = filterNightSleeps(babySleeps);
     const nightDurations = histNightSleeps.map((s) => s.durationMin);
     const nightWeights = histNightSleeps.map((s) => recencyWeight(s.startTime, now));
     const medianNightDuration = nightDurations.length >= 3
@@ -501,9 +504,7 @@ export function analyzeSleep(
   let bedtime: SleepPrediction | null = null;
 
   // Compute median bedtime from history (night sleeps starting >= 19h)
-  const nightSleeps = babySleeps.filter(
-    (s) => s.startTime.getHours() >= NIGHT_SLEEP.minStartHour && s.durationMin > NIGHT_SLEEP.minDurationMin,
-  );
+  const nightSleeps = filterNightSleeps(babySleeps);
 
   const bedtimeMinutes = nightSleeps.map(
     (s) => s.startTime.getHours() * 60 + s.startTime.getMinutes(),

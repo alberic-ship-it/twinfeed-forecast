@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import { PROFILES, INTERVAL_FILTER, NIGHT_SLEEP, getSlotId } from '../data/knowledge';
 import { detectPatterns } from './patterns';
+import { filterNightSleeps } from './sleep';
 import { recencyWeight, weightedMedian, filterRecentFeeds, filterRecentSleeps } from './recency';
 
 /**
@@ -36,11 +37,6 @@ function computePostNapFeedLatency(
 
   for (const nap of babySleeps) {
     if (!nap.endTime) continue;
-    // Only daytime naps and night wake-ups (exclude very short mid-night stirs before 4h)
-    const startHour = nap.startTime.getHours();
-    const isNightSleep = startHour >= 19 || startHour < 6;
-    const isDaytimeNap = startHour >= 6 && startHour < 21;
-    if (!isDaytimeNap && !isNightSleep) continue;
 
     // Find the first feed after this nap's end (within 120 min)
     const napEnd = nap.endTime.getTime();
@@ -103,12 +99,7 @@ function computeMedianFirstStretch(
   allFeeds: FeedRecord[],
   now: Date,
 ): number | null {
-  const nightSleeps = allSleeps.filter(
-    (s) => s.baby === baby
-      && s.startTime.getHours() >= NIGHT_SLEEP.minStartHour
-      && s.durationMin > NIGHT_SLEEP.minDurationMin
-      && s.endTime,
-  );
+  const nightSleeps = filterNightSleeps(allSleeps.filter((s) => s.baby === baby));
   const babyFeeds = allFeeds
     .filter((f) => f.baby === baby)
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
@@ -305,7 +296,7 @@ export function predictNextFeed(
     const wakeMs = expectedWakeTime.getTime();
     const predictedMs = predictedTime.getTime();
     if (predictedMs >= wakeMs && predictedMs < wakeMs + 90 * 60_000) {
-      const postWakeLatency = computePostNapFeedLatency(baby, allFeeds, rawSleeps, now) ?? 30;
+      const postWakeLatency = computePostNapFeedLatency(baby, allFeeds, allSleeps, now) ?? 30;
       predictedTime = addMinutes(expectedWakeTime, postWakeLatency);
       explanations.push({
         ruleId: 'MORNING_REBASE',
