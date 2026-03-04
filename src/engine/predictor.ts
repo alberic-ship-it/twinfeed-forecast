@@ -9,7 +9,7 @@ import type {
   Explanation,
   DetectedPattern,
 } from '../types';
-import { PROFILES, INTERVAL_FILTER, NIGHT_SLEEP, getSlotId } from '../data/knowledge';
+import { PROFILES, INTERVAL_FILTER, getSlotId } from '../data/knowledge';
 import { detectPatterns } from './patterns';
 import { filterNightSleeps } from './sleep';
 import { recencyWeight, weightedMedian, filterRecentFeeds, filterRecentSleeps } from './recency';
