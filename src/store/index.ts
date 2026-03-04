@@ -635,19 +635,25 @@ export const useStore = create<Store>((set, get) => ({
     // pour l'affichage et les stats futures.
     const milkFeeds = feeds.filter((f) => f.type !== 'solid');
 
-    // Patterns calculés en premier pour éviter un double appel dans predictNextFeed
-    const colettePatterns = detectPatterns('colette', milkFeeds, sleeps, now, feeds);
-    const isaurePatterns = detectPatterns('isaure', milkFeeds, sleeps, now, feeds);
-    const colettePred = predictNextFeed('colette', milkFeeds, sleeps, now, colettePatterns);
-    const isaurePred = predictNextFeed('isaure', milkFeeds, sleeps, now, isaurePatterns);
-    const freshAlerts = generateAlerts(milkFeeds).map((a) =>
-      dismissedAlertIds.has(a.id) ? { ...a, dismissed: true } : a
-    );
+    // Sommeil calculé en premier pour fournir le bedtime aux prédictions de repas
     const coletteNight = nightSessions.colette && !nightSessions.colette.endTime ? nightSessions.colette : undefined;
     const isaureNight = nightSessions.isaure && !nightSessions.isaure.endTime ? nightSessions.isaure : undefined;
     const ageMonths = getBabyAgeMonths(PROFILES.colette.birthDate);
     const coletteSleep = analyzeSleep('colette', sleeps, milkFeeds, now, coletteNight, ageMonths);
     const isaureSleep = analyzeSleep('isaure', sleeps, milkFeeds, now, isaureNight, ageMonths);
+
+    // bedtimeDate : nuit active → heure de démarrage réelle, sinon → bedtime projeté
+    const coletteBedtime = coletteNight?.startTime ?? coletteSleep.bedtime?.predictedTime;
+    const isaureBedtime = isaureNight?.startTime ?? isaureSleep.bedtime?.predictedTime;
+
+    // Patterns calculés en premier pour éviter un double appel dans predictNextFeed
+    const colettePatterns = detectPatterns('colette', milkFeeds, sleeps, now, feeds);
+    const isaurePatterns = detectPatterns('isaure', milkFeeds, sleeps, now, feeds);
+    const colettePred = predictNextFeed('colette', milkFeeds, sleeps, now, colettePatterns, coletteBedtime);
+    const isaurePred = predictNextFeed('isaure', milkFeeds, sleeps, now, isaurePatterns, isaureBedtime);
+    const freshAlerts = generateAlerts(milkFeeds).map((a) =>
+      dismissedAlertIds.has(a.id) ? { ...a, dismissed: true } : a
+    );
 
     set({
       predictions: { colette: colettePred, isaure: isaurePred },

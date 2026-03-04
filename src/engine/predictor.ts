@@ -109,6 +109,7 @@ export function predictNextFeed(
   rawSleeps: SleepRecord[],
   now: Date,
   precomputedPatterns?: DetectedPattern[],
+  bedtimeDate?: Date,
 ): Prediction | null {
   const allFeeds = filterRecentFeeds(rawFeeds, now);
   const allSleeps = filterRecentSleeps(rawSleeps, now);
@@ -231,6 +232,23 @@ export function predictNextFeed(
           impact: `~${latencyMin} min post-nap`,
         });
       }
+    }
+  }
+
+  // --- NIGHT REBASE ---
+  // Si le repas prédit tombe dans les 90 min après le coucher (projeté ou démarré manuellement),
+  // le bébé vient de s'endormir : rebaser depuis le coucher avec l'intervalle de nuit.
+  if (bedtimeDate) {
+    const bedtimeMs = bedtimeDate.getTime();
+    const predictedMs = predictedTime.getTime();
+    if (predictedMs > bedtimeMs && predictedMs < bedtimeMs + 90 * 60_000) {
+      const nightIntervalH = cachedInterval('night');
+      predictedTime = addMinutes(bedtimeDate, Math.round(nightIntervalH * 60));
+      explanations.push({
+        ruleId: 'NIGHT_REBASE',
+        text: 'Repas rebasé depuis le coucher — premier réveil de nuit estimé',
+        impact: `~${nightIntervalH.toFixed(1)}h post-coucher`,
+      });
     }
   }
 
