@@ -199,18 +199,26 @@ export function analyzeSleep(
     const lastFeed = nightFeeds.length > 0 ? nightFeeds[nightFeeds.length - 1] : null;
     const lastFeedAgoMin = lastFeed ? Math.round((now.getTime() - lastFeed.timestamp.getTime()) / 60_000) : null;
 
-    // Réveil projeté : deux estimations, on prend la plus tardive.
-    // - durationBased : nightStart + médiane durée de nuit (stable)
+    // Réveil projeté : blend pondéré entre deux estimations.
+    // - durationBased : nightStart + médiane durée de nuit (stable, ancre)
     // - feedBased : dernier repas + gap historique dernier-repas→réveil (adaptatif)
-    // Prendre le max évite de sous-estimer le réveil quand le dernier repas enregistré
-    // n'est pas encore le dernier de la nuit (ex : repas à 3h alors qu'il y en aura un à 5h).
+    // Le poids de feedBased croît quadratiquement selon la position du dernier repas
+    // dans la nuit : faible en début de nuit (repas précoce ≠ dernier repas),
+    // fort en fin de nuit (repas tardif probablement le dernier).
+    // Floor : nightStart + minDurationMin (réveil impossible avant 6h de nuit).
     const durationBased = new Date(activeNight.startTime.getTime() + medianNightDuration * 60_000);
+    const minWakeTime = new Date(activeNight.startTime.getTime() + NIGHT_SLEEP.minDurationMin * 60_000);
     let expectedWakeTime: Date;
     if (lastFeed) {
       const medianLastFeedToWake = computeMedianLastFeedToWakeGap(babySleeps, babyFeeds, now);
       if (medianLastFeedToWake !== null) {
         const feedBased = new Date(lastFeed.timestamp.getTime() + medianLastFeedToWake * 60_000);
-        expectedWakeTime = feedBased > durationBased ? feedBased : durationBased;
+        const lastFeedProgress = Math.min(1,
+          (lastFeed.timestamp.getTime() - activeNight.startTime.getTime()) / (medianNightDuration * 60_000)
+        );
+        const feedWeight = Math.pow(lastFeedProgress, 2); // quadratique : 0→0, 0.5→0.25, 0.9→0.81
+        const blendedMs = durationBased.getTime() * (1 - feedWeight) + feedBased.getTime() * feedWeight;
+        expectedWakeTime = new Date(Math.max(minWakeTime.getTime(), blendedMs));
       } else {
         expectedWakeTime = durationBased;
       }
