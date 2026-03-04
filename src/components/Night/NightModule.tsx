@@ -214,6 +214,13 @@ export function NightModule({ analyses }: NightModuleProps) {
                 </p>
               )}
 
+              {/* Prochain réveil intermédiaire */}
+              {progress?.nextWakeEstimate && (
+                <p className="text-[11px] text-amber-300">
+                  Prochain réveil ~{formatTime(progress.nextWakeEstimate)}
+                </p>
+              )}
+
               {/* Réveil matinal estimé */}
               {progress?.expectedWakeTime && (
                 <p className="text-[11px] text-indigo-300">

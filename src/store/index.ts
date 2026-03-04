@@ -639,8 +639,8 @@ export const useStore = create<Store>((set, get) => ({
     const coletteNight = nightSessions.colette && !nightSessions.colette.endTime ? nightSessions.colette : undefined;
     const isaureNight = nightSessions.isaure && !nightSessions.isaure.endTime ? nightSessions.isaure : undefined;
     const ageMonths = getBabyAgeMonths(PROFILES.colette.birthDate);
-    const coletteSleep = analyzeSleep('colette', sleeps, milkFeeds, now, coletteNight, ageMonths);
-    const isaureSleep = analyzeSleep('isaure', sleeps, milkFeeds, now, isaureNight, ageMonths);
+    const coletteSleep = analyzeSleep('colette', sleeps, milkFeeds, now, coletteNight, ageMonths, nightRecaps);
+    const isaureSleep = analyzeSleep('isaure', sleeps, milkFeeds, now, isaureNight, ageMonths, nightRecaps);
 
     // bedtimeDate : nuit active → heure de démarrage réelle, sinon → bedtime projeté
     const coletteBedtime = coletteNight?.startTime ?? coletteSleep.bedtime?.predictedTime;

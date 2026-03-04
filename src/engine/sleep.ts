@@ -1,5 +1,5 @@
 import { differenceInMinutes, startOfDay } from 'date-fns';
-import type { SleepRecord, FeedRecord, BabyName, NightSession } from '../types';
+import type { SleepRecord, FeedRecord, BabyName, NightSession, NightRecap } from '../types';
 import { DEFAULT_SLEEP, NIGHT_SLEEP, WAKE_WINDOWS, getDefaultSleepForAge, getWakeWindowsForAge } from '../data/knowledge';
 import { recencyWeight, weightedMedian, weightedAvg, percentile, filterRecentFeeds, filterRecentSleeps } from './recency';
 
@@ -40,6 +40,8 @@ export interface SleepAnalysis {
     lastFeedAgoMin: number | null;
     expectedWakeTime: Date;
     medianNightDurationMin: number;
+    /** Estimated next intermediate wake (last feed + median inter-feed gap), null if past or near morning */
+    nextWakeEstimate?: Date;
   };
 }
 
@@ -155,6 +157,37 @@ function computeMedianLastFeedToWakeGap(
   return Math.round(weightedMedian(gaps, weights));
 }
 
+/**
+ * Compute the weighted median inter-feed gap (minutes) from historical night recaps.
+ * Models baby falling back to sleep right after each feed — gap ≈ sleep stretch between wakes.
+ * Returns null if fewer than 3 data points.
+ */
+function computeMedianNightInterFeedGap(
+  baby: BabyName,
+  nightRecaps: NightRecap[],
+  now: Date,
+): number | null {
+  const gaps: number[] = [];
+  const weights: number[] = [];
+
+  for (const recap of nightRecaps) {
+    if (recap.baby !== baby) continue;
+    const feeds = [...recap.session.feeds].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    if (feeds.length < 2) continue;
+
+    for (let i = 1; i < feeds.length; i++) {
+      const gap = differenceInMinutes(feeds[i].timestamp, feeds[i - 1].timestamp);
+      if (gap > 30 && gap < 300) {
+        gaps.push(gap);
+        weights.push(recencyWeight(recap.session.startTime, now));
+      }
+    }
+  }
+
+  if (gaps.length < 3) return null;
+  return Math.round(weightedMedian(gaps, weights));
+}
+
 /** Filter sleeps to historical night sleeps only (completed, ≥ minDuration, started at night hour). */
 export function filterNightSleeps(sleeps: SleepRecord[]): SleepRecord[] {
   return sleeps.filter(
@@ -173,6 +206,7 @@ export function analyzeSleep(
   now: Date,
   activeNight?: NightSession,
   ageMonths?: number,
+  nightRecaps?: NightRecap[],
 ): SleepAnalysis {
   const defaults = ageMonths !== undefined ? getDefaultSleepForAge(ageMonths) : DEFAULT_SLEEP[baby];
   const wakeWindows = ageMonths !== undefined ? getWakeWindowsForAge(ageMonths) : WAKE_WINDOWS;
@@ -229,6 +263,20 @@ export function analyzeSleep(
       expectedWakeTime = durationBased;
     }
 
+    // Prochain réveil intermédiaire estimé : dernier repas + médiane des écarts inter-repas nuit
+    // Modèle : le bébé se rendort directement après chaque repas → gap inter-repas ≈ stretch de sommeil
+    let nextWakeEstimate: Date | undefined;
+    if (lastFeed && nightRecaps && nightRecaps.length > 0) {
+      const medianInterFeedGap = computeMedianNightInterFeedGap(baby, nightRecaps, now);
+      if (medianInterFeedGap !== null) {
+        const candidate = new Date(lastFeed.timestamp.getTime() + medianInterFeedGap * 60_000);
+        // N'afficher que si dans le futur et avant le réveil matinal projeté
+        if (candidate > now && candidate < expectedWakeTime) {
+          nextWakeEstimate = candidate;
+        }
+      }
+    }
+
     // Still compute today's naps for context (même fenêtre étendue)
     const todayStart = new Date(now);
     todayStart.setHours(6, 0, 0, 0);
@@ -259,6 +307,7 @@ export function analyzeSleep(
         lastFeedAgoMin,
         expectedWakeTime,
         medianNightDurationMin: medianNightDuration,
+        nextWakeEstimate,
       },
     };
   }
