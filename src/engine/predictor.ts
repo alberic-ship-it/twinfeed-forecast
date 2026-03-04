@@ -36,8 +36,11 @@ function computePostNapFeedLatency(
 
   for (const nap of babySleeps) {
     if (!nap.endTime) continue;
-    // Only daytime naps (6h–21h)
-    if (nap.startTime.getHours() < 6 || nap.startTime.getHours() >= 21) continue;
+    // Only daytime naps and night wake-ups (exclude very short mid-night stirs before 4h)
+    const startHour = nap.startTime.getHours();
+    const isNightSleep = startHour >= 19 || startHour < 6;
+    const isDaytimeNap = startHour >= 6 && startHour < 21;
+    if (!isDaytimeNap && !isNightSleep) continue;
 
     // Find the first feed after this nap's end (within 120 min)
     const napEnd = nap.endTime.getTime();
@@ -110,6 +113,7 @@ export function predictNextFeed(
   now: Date,
   precomputedPatterns?: DetectedPattern[],
   bedtimeDate?: Date,
+  expectedWakeTime?: Date,
 ): Prediction | null {
   const allFeeds = filterRecentFeeds(rawFeeds, now);
   const allSleeps = filterRecentSleeps(rawSleeps, now);
@@ -248,6 +252,23 @@ export function predictNextFeed(
         ruleId: 'NIGHT_REBASE',
         text: 'Repas rebasé depuis le coucher — premier réveil de nuit estimé',
         impact: `~${nightIntervalH.toFixed(1)}h post-coucher`,
+      });
+    }
+  }
+
+  // --- MORNING REBASE ---
+  // Si le repas prédit tombe dans les 90 min avant le réveil projeté (nuit active),
+  // le bébé est en fin de nuit : rebaser depuis le réveil avec la latence post-nuit.
+  if (expectedWakeTime) {
+    const wakeMs = expectedWakeTime.getTime();
+    const predictedMs = predictedTime.getTime();
+    if (predictedMs < wakeMs && predictedMs > wakeMs - 90 * 60_000) {
+      const postWakeLatency = computePostNapFeedLatency(baby, allFeeds, rawSleeps, now) ?? 30;
+      predictedTime = addMinutes(expectedWakeTime, postWakeLatency);
+      explanations.push({
+        ruleId: 'MORNING_REBASE',
+        text: 'Repas rebasé depuis le réveil prévu — fin de nuit',
+        impact: `~${postWakeLatency} min post-réveil`,
       });
     }
   }

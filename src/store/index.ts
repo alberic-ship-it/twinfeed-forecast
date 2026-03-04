@@ -645,12 +645,15 @@ export const useStore = create<Store>((set, get) => ({
     // bedtimeDate : nuit active → heure de démarrage réelle, sinon → bedtime projeté
     const coletteBedtime = coletteNight?.startTime ?? coletteSleep.bedtime?.predictedTime;
     const isaureBedtime = isaureNight?.startTime ?? isaureSleep.bedtime?.predictedTime;
+    // expectedWakeTime : uniquement disponible quand une nuit est active
+    const coletteWakeTime = coletteSleep.nightProgress?.expectedWakeTime;
+    const isaureWakeTime = isaureSleep.nightProgress?.expectedWakeTime;
 
     // Patterns calculés en premier pour éviter un double appel dans predictNextFeed
     const colettePatterns = detectPatterns('colette', milkFeeds, sleeps, now, feeds);
     const isaurePatterns = detectPatterns('isaure', milkFeeds, sleeps, now, feeds);
-    const colettePred = predictNextFeed('colette', milkFeeds, sleeps, now, colettePatterns, coletteBedtime);
-    const isaurePred = predictNextFeed('isaure', milkFeeds, sleeps, now, isaurePatterns, isaureBedtime);
+    const colettePred = predictNextFeed('colette', milkFeeds, sleeps, now, colettePatterns, coletteBedtime, coletteWakeTime);
+    const isaurePred = predictNextFeed('isaure', milkFeeds, sleeps, now, isaurePatterns, isaureBedtime, isaureWakeTime);
     const freshAlerts = generateAlerts(milkFeeds).map((a) =>
       dismissedAlertIds.has(a.id) ? { ...a, dismissed: true } : a
     );
