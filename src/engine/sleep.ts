@@ -548,7 +548,7 @@ export function analyzeSleep(
       }
     }
 
-    if (predictedTime) {
+    if (predictedTime && napsToday <= defaults.napsPerDay) {
       const estimatedDurationMin = sleepStatus === 'rescue_nap'
         ? Math.min(30, Math.round(avgNapDuration * 0.6))
         : avgNapDuration;
