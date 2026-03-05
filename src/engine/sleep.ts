@@ -463,6 +463,9 @@ export function analyzeSleep(
         // Le cutoff est appliqué inline sur chaque stratégie pour que A4 serve
         // de filet de secours même si A1/A2/A3 donnent une heure après 17h30.
 
+        // Mémorise le meilleur temps calculé (même passé) pour détecter un vrai retard en A4
+        let bestComputedTime: Date | null = null;
+
         // A1: intervalle positionnel (meilleur)
         const positionalInterval = positionalInterNap.get(napsToday - 1);
         if (positionalInterval !== undefined) {
@@ -472,6 +475,7 @@ export function analyzeSleep(
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromNap = new Date(lastTodayNap.endTime.getTime() + interval * 60_000);
+          if (!bestComputedTime || fromNap > bestComputedTime) bestComputedTime = fromNap;
           if (fromNap > now && beforeCutoff(fromNap)) predictedTime = fromNap;
         }
 
@@ -483,6 +487,7 @@ export function analyzeSleep(
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromNap = new Date(lastTodayNap.endTime.getTime() + interval * 60_000);
+          if (!bestComputedTime || fromNap > bestComputedTime) bestComputedTime = fromNap;
           if (fromNap > now && beforeCutoff(fromNap)) predictedTime = fromNap;
         }
 
@@ -494,15 +499,23 @@ export function analyzeSleep(
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromWake = new Date(lastTodayNap.endTime.getTime() + wakeWindowMin * 60_000);
+          if (!bestComputedTime || fromWake > bestComputedTime) bestComputedTime = fromWake;
           if (fromWake > now && beforeCutoff(fromWake)) predictedTime = fromWake;
         }
 
-        // A4: toutes les stratégies épuisées → sieste en retard ou post-cutoff
+        // A4: toutes les stratégies épuisées → fallback "dès que possible"
+        // N'affiche "en retard" que si la fenêtre était vraiment manquée (>30 min),
+        // pas lors d'une simple saisie manuelle avec une heure passée.
         if (!predictedTime) {
           const nowPlus15 = new Date(now.getTime() + 15 * 60_000);
           if (beforeCutoff(nowPlus15)) {
             predictedTime = nowPlus15;
-            hint = 'Sieste en retard — dès que possible';
+            const overdueMin = bestComputedTime
+              ? differenceInMinutes(now, bestComputedTime)
+              : 0;
+            if (overdueMin > 30) {
+              hint = 'Sieste en retard — dès que possible';
+            }
           }
         }
       } else {
