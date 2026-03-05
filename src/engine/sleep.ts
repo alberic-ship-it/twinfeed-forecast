@@ -475,7 +475,7 @@ export function analyzeSleep(
             hint = 'Sieste courte — réveil plus tôt que prévu';
           }
           const fromNap = new Date(lastTodayNap.endTime.getTime() + interval * 60_000);
-          if (!bestComputedTime || fromNap > bestComputedTime) bestComputedTime = fromNap;
+          bestComputedTime = fromNap;
           if (fromNap > now && beforeCutoff(fromNap)) predictedTime = fromNap;
         }
 
