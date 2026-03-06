@@ -1,17 +1,12 @@
 import type { FeedRecord, SleepRecord, BabyName } from '../types';
-
-function computeMedian(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
-}
+import { recencyWeight, weightedMedian, filterRecentFeeds, filterRecentSleeps } from './recency';
 
 /**
  * Compute a combined accuracy score [0..1] for a baby's feed & nap predictions.
  * Uses a rolling 24-hour window: events in the last 24h are compared against
- * the historical median (everything older than 24h).
+ * the historical median (everything older than 24h, capped at 30 days).
+ * The historical median uses the same recency weighting as the predictor
+ * (≤7j = 5×, 8-21j = 2×, 22-30j = 1×) so accuracy stays aligned with recent patterns.
  * Feed accuracy: % of recent inter-feed intervals within ±45 min of historical median.
  * Nap accuracy: % of recent nap durations within ±20 min of historical median.
  * Returns null if insufficient data (< 5 historical events or 0 recent events).
@@ -25,53 +20,58 @@ export function computeDayAccuracy(
   const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   // ── Feeds ──────────────────────────────────────────────────────────────
-  const babyFeeds = feeds
-    .filter((f) => f.baby === baby)
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  const recentFeeds = filterRecentFeeds(feeds.filter((f) => f.baby === baby), now)
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-  const historicalFeeds = babyFeeds.filter((f) => new Date(f.timestamp) < windowStart);
-  const todayFeeds = babyFeeds.filter((f) => new Date(f.timestamp) >= windowStart);
+  const historicalFeeds = recentFeeds.filter((f) => f.timestamp < windowStart);
+  const todayFeeds = recentFeeds.filter((f) => f.timestamp >= windowStart);
 
-  const histIntervals: number[] = [];
+  const histIntervalValues: number[] = [];
+  const histIntervalWeights: number[] = [];
   for (let i = 1; i < historicalFeeds.length; i++) {
-    const gap =
-      (new Date(historicalFeeds[i].timestamp).getTime() -
-        new Date(historicalFeeds[i - 1].timestamp).getTime()) /
-      60_000;
-    if (gap >= 60 && gap <= 360) histIntervals.push(gap);
+    const gap = (historicalFeeds[i].timestamp.getTime() - historicalFeeds[i - 1].timestamp.getTime()) / 60_000;
+    if (gap >= 60 && gap <= 360) {
+      histIntervalValues.push(gap);
+      histIntervalWeights.push(recencyWeight(historicalFeeds[i].timestamp, now));
+    }
   }
 
   const todayIntervals: number[] = [];
   for (let i = 1; i < todayFeeds.length; i++) {
-    const gap =
-      (new Date(todayFeeds[i].timestamp).getTime() -
-        new Date(todayFeeds[i - 1].timestamp).getTime()) /
-      60_000;
+    const gap = (todayFeeds[i].timestamp.getTime() - todayFeeds[i - 1].timestamp.getTime()) / 60_000;
     if (gap >= 60 && gap <= 360) todayIntervals.push(gap);
   }
 
   let feedScore: number | null = null;
   let feedWeight = 0;
-  if (histIntervals.length >= 5 && todayIntervals.length >= 1) {
-    const median = computeMedian(histIntervals);
+  if (histIntervalValues.length >= 5 && todayIntervals.length >= 1) {
+    const median = weightedMedian(histIntervalValues, histIntervalWeights);
     const hits = todayIntervals.filter((g) => Math.abs(g - median) <= 45).length;
     feedScore = hits / todayIntervals.length;
     feedWeight = todayIntervals.length;
   }
 
   // ── Naps ───────────────────────────────────────────────────────────────
-  const babySleeps = sleeps.filter((s) => s.baby === baby && s.endTime);
-  const historicalSleeps = babySleeps.filter((s) => new Date(s.startTime) < windowStart);
-  const todaySleeps = babySleeps.filter((s) => new Date(s.startTime) >= windowStart);
+  const recentSleeps = filterRecentSleeps(
+    sleeps.filter((s) => s.baby === baby && s.endTime),
+    now,
+  );
+  const historicalSleeps = recentSleeps.filter((s) => s.startTime < windowStart);
+  const todaySleeps = recentSleeps.filter((s) => s.startTime >= windowStart);
 
-  const histDurations = historicalSleeps
-    .map((s) => s.durationMin)
-    .filter((d) => d >= 10 && d <= 180);
+  const histDurationValues: number[] = [];
+  const histDurationWeights: number[] = [];
+  for (const s of historicalSleeps) {
+    if (s.durationMin >= 10 && s.durationMin <= 180) {
+      histDurationValues.push(s.durationMin);
+      histDurationWeights.push(recencyWeight(s.startTime, now));
+    }
+  }
 
   let napScore: number | null = null;
   let napWeight = 0;
-  if (histDurations.length >= 5 && todaySleeps.length >= 1) {
-    const median = computeMedian(histDurations);
+  if (histDurationValues.length >= 5 && todaySleeps.length >= 1) {
+    const median = weightedMedian(histDurationValues, histDurationWeights);
     const hits = todaySleeps.filter((s) => Math.abs(s.durationMin - median) <= 20).length;
     napScore = hits / todaySleeps.length;
     napWeight = todaySleeps.length;
