@@ -32,7 +32,9 @@ export type PatternId =
   | 'VOLUME_DECLINE'
   | 'SUSTAINED_APPETITE'
   | 'SHORT_NIGHT'
-  | 'RECENT_SOLID';
+  | 'RECENT_SOLID'
+  | 'SOLID_ROUTINE'
+  | 'SOLID_TIMING';
 
 export type Screen = 'import' | 'dashboard' | 'entries';
 

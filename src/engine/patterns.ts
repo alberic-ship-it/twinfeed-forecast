@@ -337,17 +337,19 @@ export function detectPatterns(
     });
   }
 
-  // --- RECENT SOLID ---
-  // If a solid was logged in the last 90 min, slightly extend the next milk
-  // feed interval and reduce the predicted volume. Portion size modulates the effect.
+  // --- SOLID PATTERNS ---
+  // All solid-based patterns share the same allRawFeeds data source.
   if (allRawFeeds) {
-    const recentSolid = allRawFeeds
-      .filter((f) => f.baby === baby && f.type === 'solid')
+    const allBabySolids = allRawFeeds.filter((f) => f.baby === baby && f.type === 'solid');
+    const solidLast7d = allBabySolids.filter((f) => f.timestamp >= subDays(now, 7));
+
+    // RECENT_SOLID: solid in the last 90 min → delay and reduce next milk feed.
+    const recentSolid = allBabySolids
       .filter((f) => differenceInMinutes(now, f.timestamp) <= 90 && differenceInMinutes(now, f.timestamp) >= 0)
       .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
 
     if (recentSolid) {
-      const portion = recentSolid.notes; // 'petite' | 'normale' | 'grande'
+      const portion = recentSolid.notes;
       const timingModifier = portion === 'grande' ? 1.12 : portion === 'petite' ? 1.05 : 1.08;
       const volumeModifier = portion === 'grande' ? 0.90 : portion === 'petite' ? 0.96 : 0.93;
       const portionLabel = portion === 'grande' ? 'grande' : portion === 'petite' ? 'petite' : 'normale';
@@ -360,6 +362,64 @@ export function detectPatterns(
         timingModifier,
         volumeModifier,
       });
+    }
+
+    // SOLID_ROUTINE: solids established regularly over 7 days → reduce expected milk volumes.
+    if (solidLast7d.length >= 3) {
+      const daySet = new Set(solidLast7d.map((f) => f.timestamp.toDateString()));
+      const daysWithSolids = daySet.size;
+      if (daysWithSolids >= 3) {
+        const avgPerDay = solidLast7d.length / daysWithSolids;
+        const volumeModifier = avgPerDay >= 2 ? 0.90 : 0.94;
+        const description =
+          avgPerDay >= 2
+            ? `Diversification établie (≈${avgPerDay.toFixed(1)} repas solides/jour sur ${daysWithSolids} jours) — volumes lactés ajustés à la baisse`
+            : `Diversification en cours (≈${avgPerDay.toFixed(1)} repas solide/jour sur ${daysWithSolids} jours) — léger ajustement des volumes`;
+        patterns.push({
+          id: 'SOLID_ROUTINE',
+          label: 'Diversification active',
+          description,
+          baby,
+          detectedAt: now,
+          volumeModifier,
+        });
+      }
+    }
+
+    // SOLID_TIMING: regular solid mealtime detected → advance next milk feed to preserve appetite.
+    if (solidLast7d.length >= 4) {
+      const lunchCount = solidLast7d.filter((f) => {
+        const h = f.timestamp.getHours();
+        return h >= 11 && h < 14;
+      }).length;
+      const dinnerCount = solidLast7d.filter((f) => {
+        const h = f.timestamp.getHours();
+        return h >= 17 && h < 20;
+      }).length;
+      const lunchRatio = lunchCount / solidLast7d.length;
+      const dinnerRatio = dinnerCount / solidLast7d.length;
+
+      if (lunchRatio >= 0.6 && hour >= 9 && hour < 11) {
+        patterns.push({
+          id: 'SOLID_TIMING',
+          label: 'Solide de midi prévu',
+          description: `Repas solide habituel à midi (${lunchCount}× sur 7j) — repas lacté avancé pour préserver l'appétit`,
+          baby,
+          detectedAt: now,
+          timingModifier: 0.88,
+          volumeModifier: 0.97,
+        });
+      } else if (dinnerRatio >= 0.6 && hour >= 15 && hour < 17) {
+        patterns.push({
+          id: 'SOLID_TIMING',
+          label: 'Solide du soir prévu',
+          description: `Repas solide habituel en soirée (${dinnerCount}× sur 7j) — repas lacté avancé pour préserver l'appétit`,
+          baby,
+          detectedAt: now,
+          timingModifier: 0.88,
+          volumeModifier: 0.97,
+        });
+      }
     }
   }
 
