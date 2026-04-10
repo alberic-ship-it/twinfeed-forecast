@@ -21,20 +21,22 @@ export function getSlotId(hour: number): TimeSlotId {
 // Hardcoded from profiles.yaml and config.yaml — no need for runtime YAML parsing
 // since these are static knowledge base values
 
+// Recalibrated 2026-04-10 from last 30 days of real usage data (Netlify Blobs)
 const COLETTE_SLOTS: TimeSlot[] = [
-  { id: 'morning', hours: [6, 7, 8, 9], meanMl: 129, stdMl: 41, typicalIntervalAfterH: 3.5 },
-  { id: 'midday', hours: [10, 11, 12, 13], meanMl: 127, stdMl: 36, typicalIntervalAfterH: 3.0 },
-  { id: 'afternoon', hours: [14, 15, 16, 17], meanMl: 135, stdMl: 33, typicalIntervalAfterH: 2.5 },
-  { id: 'evening', hours: [18, 19, 20, 21], meanMl: 147, stdMl: 31, typicalIntervalAfterH: 3.0, peak: true },
-  { id: 'night', hours: [22, 23, 0, 1, 2, 3, 4, 5], meanMl: 116, stdMl: 43, typicalIntervalAfterH: 4.0 },
+  { id: 'morning',   hours: [6, 7, 8, 9],               meanMl: 90,  stdMl: 38, typicalIntervalAfterH: 3.3 },
+  { id: 'midday',    hours: [10, 11, 12, 13],            meanMl: 140, stdMl: 30, typicalIntervalAfterH: 4.8, peak: true },
+  { id: 'afternoon', hours: [14, 15, 16, 17],            meanMl: 114, stdMl: 43, typicalIntervalAfterH: 3.7 },
+  { id: 'evening',   hours: [18, 19, 20, 21],            meanMl: 130, stdMl: 42, typicalIntervalAfterH: 3.3 },
+  { id: 'night',     hours: [22, 23, 0, 1, 2, 3, 4, 5], meanMl: 106, stdMl: 33, typicalIntervalAfterH: 3.8 },
 ];
 
+// Recalibrated 2026-04-10 from last 30 days of real usage data (Netlify Blobs)
 const ISAURE_SLOTS: TimeSlot[] = [
-  { id: 'morning', hours: [6, 7, 8, 9], meanMl: 134, stdMl: 23, typicalIntervalAfterH: 3.0 },
-  { id: 'midday', hours: [10, 11, 12, 13], meanMl: 148, stdMl: 32, typicalIntervalAfterH: 3.0, peak: true },
-  { id: 'afternoon', hours: [14, 15, 16, 17], meanMl: 143, stdMl: 27, typicalIntervalAfterH: 2.5 },
-  { id: 'evening', hours: [18, 19, 20, 21], meanMl: 140, stdMl: 32, typicalIntervalAfterH: 3.0 },
-  { id: 'night', hours: [22, 23, 0, 1, 2, 3, 4, 5], meanMl: 102, stdMl: 39, typicalIntervalAfterH: 4.5 },
+  { id: 'morning',   hours: [6, 7, 8, 9],               meanMl: 100, stdMl: 36, typicalIntervalAfterH: 3.7 },
+  { id: 'midday',    hours: [10, 11, 12, 13],            meanMl: 150, stdMl: 30, typicalIntervalAfterH: 4.3, peak: true },
+  { id: 'afternoon', hours: [14, 15, 16, 17],            meanMl: 125, stdMl: 43, typicalIntervalAfterH: 3.3 },
+  { id: 'evening',   hours: [18, 19, 20, 21],            meanMl: 123, stdMl: 49, typicalIntervalAfterH: 3.8 },
+  { id: 'night',     hours: [22, 23, 0, 1, 2, 3, 4, 5], meanMl: 108, stdMl: 40, typicalIntervalAfterH: 3.6 },
 ];
 
 export const PROFILES: Record<BabyName, BabyProfile> = {
@@ -43,19 +45,19 @@ export const PROFILES: Record<BabyName, BabyProfile> = {
     key: 'colette',
     birthDate: '2025-08-12',
     stats: {
-      meanVolumeMl: 131,
-      stdVolumeMl: 33,
-      typicalRangeMl: [100, 160],
-      meanIntervalH: 4.6,
-      medianIntervalH: 4.1,
-      typicalRangeH: [2.5, 7.5],
-      p10H: 2.4,
-      p90H: 7.4,
+      meanVolumeMl: 115,
+      stdVolumeMl: 41,
+      typicalRangeMl: [75, 155],
+      meanIntervalH: 3.8,
+      medianIntervalH: 3.6,
+      typicalRangeH: [2.1, 6.0],
+      p10H: 2.1,
+      p90H: 6.0,
     },
     slots: COLETTE_SLOTS,
     predictionAdjustments: {
-      volume: { evening_boost: 1.14, night_reduction: 0.89 },
-      interval: { base_multiplier: 1.0, evening_reduction: 0.85 },
+      volume: { midday_boost: 1.22, evening_boost: 1.13, night_reduction: 0.92 },
+      interval: { base_multiplier: 1.0, midday_extension: 1.27, evening_reduction: 0.88 },
     },
   },
   isaure: {
@@ -63,19 +65,19 @@ export const PROFILES: Record<BabyName, BabyProfile> = {
     key: 'isaure',
     birthDate: '2025-08-12',
     stats: {
-      meanVolumeMl: 134,
-      stdVolumeMl: 32,
-      typicalRangeMl: [100, 165],
-      meanIntervalH: 4.2,
-      medianIntervalH: 3.4,
-      typicalRangeH: [2.2, 7.0],
+      meanVolumeMl: 120,
+      stdVolumeMl: 44,
+      typicalRangeMl: [75, 165],
+      meanIntervalH: 3.7,
+      medianIntervalH: 3.5,
+      typicalRangeH: [2.2, 5.2],
       p10H: 2.2,
-      p90H: 7.0,
+      p90H: 5.2,
     },
     slots: ISAURE_SLOTS,
     predictionAdjustments: {
-      volume: { midday_boost: 1.10, night_reduction: 0.72 },
-      interval: { base_multiplier: 0.91, midday_extension: 1.05 },
+      volume: { midday_boost: 1.25, night_reduction: 0.90 },
+      interval: { base_multiplier: 1.0, midday_extension: 1.17 },
     },
   },
 };
